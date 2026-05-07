@@ -466,8 +466,11 @@ pub fn run() {
             commands::projects::toggle_project_skill,
             commands::projects::delete_project_skill,
             commands::projects::slugify_skill_names,
+            commands::projects::bind_scenario_to_project,
+            commands::projects::unbind_scenario_from_project,
             // Scenarios
             commands::scenarios::get_scenarios,
+            commands::scenarios::get_project_scenarios,
             commands::scenarios::get_active_scenario,
             commands::scenarios::create_scenario,
             commands::scenarios::update_scenario,

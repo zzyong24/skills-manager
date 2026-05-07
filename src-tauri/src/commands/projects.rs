@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::core::skill_store::{ProjectRecord, SkillRecord, SkillStore};
 use crate::core::{error::AppError, installer, project_scanner, sync_engine, tool_adapters};
+use crate::commands::scenarios::{sync_scenario_to_project, unsync_scenario_from_project};
 
 #[derive(Serialize, Default)]
 pub struct SyncHealthDto {
@@ -1104,6 +1105,48 @@ pub async fn delete_project_skill(
 
         ensure_dir_within_root(&target, &target_root)?;
         remove_workspace_skill_target(&target)?;
+        Ok(())
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn bind_scenario_to_project(
+    store: State<'_, Arc<SkillStore>>,
+    project_id: String,
+    scenario_id: String,
+) -> Result<(), AppError> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store
+            .bind_scenario_to_project(&project_id, &scenario_id)
+            .map_err(AppError::db)?;
+
+        // Sync all skills in this scenario to the project's agent directories
+        sync_scenario_to_project(&store, &project_id, &scenario_id)
+            .map_err(AppError::db)?;
+
+        Ok(())
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn unbind_scenario_from_project(
+    store: State<'_, Arc<SkillStore>>,
+    project_id: String,
+    scenario_id: String,
+) -> Result<(), AppError> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // First unsync (remove symlinks) for all skills in this scenario
+        unsync_scenario_from_project(&store, &project_id, &scenario_id)
+            .map_err(AppError::db)?;
+
+        // Then remove the binding
+        store
+            .unbind_scenario_from_project(&project_id, &scenario_id)
+            .map_err(AppError::db)?;
         Ok(())
     })
     .await?

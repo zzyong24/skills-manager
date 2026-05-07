@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
 
 /// Current schema version. Bump this when adding a new migration.
-const LATEST_VERSION: u32 = 4;
+const LATEST_VERSION: u32 = 5;
 
 /// Run all pending migrations on the database.
 ///
@@ -51,6 +51,7 @@ fn migrate_step(conn: &Connection, from_version: u32) -> Result<()> {
         1 => migrate_v1_to_v2(conn),
         2 => migrate_v2_to_v3(conn),
         3 => migrate_v3_to_v4(conn),
+        4 => migrate_v4_to_v5(conn),
         _ => bail!("unknown migration version: {from_version}"),
     }
 }
@@ -237,6 +238,23 @@ fn migrate_v3_to_v4(conn: &Connection) -> Result<()> {
     add_column_if_missing(conn, "projects", "linked_agent_key", "TEXT")?;
     add_column_if_missing(conn, "projects", "linked_agent_name", "TEXT")?;
     add_column_if_missing(conn, "projects", "disabled_path", "TEXT")?;
+    Ok(())
+}
+
+/// v4 → v5: Replace single active_scenario with project-scene binding.
+/// Allows many-to-many binding between projects and scenarios for multi-project workflows.
+fn migrate_v4_to_v5(conn: &Connection) -> Result<()> {
+    // Create project_scenarios table for many-to-many project-scene binding
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS project_scenarios (
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            scenario_id TEXT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+            PRIMARY KEY (project_id, scenario_id)
+        );
+        ",
+    )?;
     Ok(())
 }
 

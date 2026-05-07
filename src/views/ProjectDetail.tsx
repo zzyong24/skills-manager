@@ -33,6 +33,7 @@ import { AgentToggleSection, type AgentToggleItem } from "../components/AgentTog
 import { ProjectAgentDots } from "../components/ProjectAgentDots";
 import { SkillMarkdown } from "../components/SkillMarkdown";
 import { DocumentDiffViewer } from "../components/DocumentDiffViewer";
+import { ScenePickerDialog } from "../components/ScenePickerDialog";
 import { getTagActiveColor, getTagColor } from "../lib/skillTags";
 import { cn } from "../utils";
 import * as api from "../lib/tauri";
@@ -177,6 +178,8 @@ export function ProjectDetail() {
       return false;
     }
   });
+  const [boundScenes, setBoundScenes] = useState<{ id: string; name: string }[]>([]);
+  const [showScenePicker, setShowScenePicker] = useState(false);
   const dismissAddCallout = () => {
     setShowAddCallout(false);
     try {
@@ -207,6 +210,20 @@ export function ProjectDetail() {
   useEffect(() => {
     loadSkills();
   }, [loadSkills]);
+
+  // Load bound scenes for this project
+  useEffect(() => {
+    if (!id) return;
+    const loadBoundScenes = async () => {
+      try {
+        const scenes = await api.getProjectScenarios(id);
+        setBoundScenes(scenes);
+      } catch (e) {
+        console.error("Failed to load bound scenes:", e);
+      }
+    };
+    loadBoundScenes();
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -567,6 +584,17 @@ export function ProjectDetail() {
     }
   };
 
+  const handleUnbindScene = async (scenarioId: string) => {
+    if (!id) return;
+    try {
+      await api.unbindScenarioFromProject(id, scenarioId);
+      toast.success(t("project.sceneUnbound"));
+      setBoundScenes((prev) => prev.filter((s) => s.id !== scenarioId));
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, t("common.error")));
+    }
+  };
+
   const handleBatchDeleteProject = async () => {
     if (!id) return;
     let deleted = 0;
@@ -778,6 +806,41 @@ export function ProjectDetail() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Bound Scenes Section */}
+      <div className="mb-4 rounded-xl border border-border-subtle bg-surface/50 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-[13px] font-medium text-secondary">{t("project.boundScenes")}</h3>
+          <button
+            onClick={() => setShowScenePicker(true)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
+          >
+            <Plus className="h-3 w-3" />
+            {t("project.addScene")}
+          </button>
+        </div>
+        {boundScenes.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {boundScenes.map((scene) => (
+              <div
+                key={scene.id}
+                className="inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[12px] font-medium text-secondary"
+              >
+                <Layers className="h-3 w-3 text-muted" />
+                <span>{scene.name}</span>
+                <button
+                  onClick={() => handleUnbindScene(scene.id)}
+                  className="ml-0.5 rounded-full p-0.5 text-muted hover:bg-surface-hover hover:text-secondary"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[12px] text-muted">{t("project.noBoundScenes")}</p>
+        )}
       </div>
 
       <div className="app-toolbar">
@@ -1312,6 +1375,20 @@ export function ProjectDetail() {
           onExport={handleExportFromCenter}
           onBatchExport={handleBatchExportFromCenter}
           onClose={() => setShowExportDialog(false)}
+        />
+      )}
+
+      {/* Scene Picker Dialog */}
+      {showScenePicker && id && (
+        <ScenePickerDialog
+          boundSceneIds={boundScenes.map((s) => s.id)}
+          onBind={async (scenarioId) => {
+            await api.bindScenarioToProject(id, scenarioId);
+            const scenes = await api.getProjectScenarios(id);
+            setBoundScenes(scenes);
+            setShowScenePicker(false);
+          }}
+          onClose={() => setShowScenePicker(false)}
         />
       )}
     </div>

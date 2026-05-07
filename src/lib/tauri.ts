@@ -467,6 +467,9 @@ export const gitBackupRestoreVersion = (tag: string) =>
 
 export const getScenarios = () => invoke<Scenario[]>("get_scenarios");
 
+export const getProjectScenarios = (projectId: string) =>
+  invoke<Scenario[]>("get_project_scenarios", { projectId });
+
 export const getActiveScenario = () =>
   invoke<Scenario | null>("get_active_scenario");
 
@@ -534,6 +537,12 @@ export const addLinkedWorkspace = (name: string, path: string, disabledPath?: st
 
 export const removeProject = (id: string) =>
   invoke<void>("remove_project", { id });
+
+export const bindScenarioToProject = (projectId: string, scenarioId: string) =>
+  invoke<void>("bind_scenario_to_project", { projectId, scenarioId });
+
+export const unbindScenarioFromProject = (projectId: string, scenarioId: string) =>
+  invoke<void>("unbind_scenario_from_project", { projectId, scenarioId });
 
 export const scanProjects = (root: string) =>
   invoke<string[]>("scan_projects", { root });

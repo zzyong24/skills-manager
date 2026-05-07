@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
@@ -6,8 +7,8 @@ use tauri::State;
 use crate::core::{
     error::AppError,
     scenario_service,
-    skill_store::{ScenarioRecord, SkillStore},
-    sync_engine, sync_metadata,
+    skill_store::{ProjectRecord, ScenarioRecord, SkillStore, SkillTargetRecord},
+    sync_engine, sync_metadata, tool_adapters,
 };
 
 fn refresh_tray_menu_best_effort(app: &tauri::AppHandle) {
@@ -25,6 +26,226 @@ pub(crate) fn sync_skill_to_active_scenario(
 ) -> Result<(), AppError> {
     scenario_service::sync_skill_to_active_scenario(store, scenario_id, skill_id)
 }
+
+/// Remove all skill symlinks for a scenario from a project (used when unbinding).
+pub(crate) fn unsync_scenario_from_project(
+    store: &SkillStore,
+    project_id: &str,
+    scenario_id: &str,
+) -> Result<(), AppError> {
+    // Get project record
+    let project = store
+        .get_project_by_id(project_id)
+        .map_err(AppError::db)?
+        .ok_or_else(|| AppError::not_found("Project not found"))?;
+
+    // Get all skills in this scenario
+    let skill_ids = store.get_skill_ids_for_scenario(scenario_id).map_err(AppError::db)?;
+
+    // Get all enabled/installed adapters
+    let adapters = tool_adapters::enabled_installed_adapters(store);
+
+    for skill_id in skill_ids {
+        let Ok(Some(skill)) = store.get_skill_by_id(&skill_id) else {
+            continue;
+        };
+
+        let target_name = sync_engine::target_dir_name(
+            &std::path::PathBuf::from(&skill.central_path),
+            &skill.name,
+        );
+
+        for adapter in &adapters {
+            let target = resolve_project_skill_target(&project, &adapter.key, &target_name);
+
+            // Remove the symlink if it exists
+            if let Err(e) = sync_engine::remove_target(&target) {
+                log::warn!("Failed to remove target {}: {e}", target.display());
+            }
+
+            // Delete the target record
+            let _ = store.delete_target(&skill_id, &adapter.key);
+        }
+    }
+
+    Ok(())
+}
+
+/// Sync all skills in a scenario to a specific project's skill directories.
+/// This is called when binding a scenario to a project.
+///
+/// For each skill:
+/// 1. Creates the skill in project's .skills/ directory (shared source)
+/// 2. For each agent that has opened this project (agent dir exists), creates a symlink
+///    pointing to project/.skills/skill-name
+pub(crate) fn sync_scenario_to_project(
+    store: &SkillStore,
+    project_id: &str,
+    scenario_id: &str,
+) -> Result<(), AppError> {
+    let configured_mode = store.get_setting("sync_mode").map_err(AppError::db)?;
+
+    // Get project record to resolve project-specific paths
+    let project = store
+        .get_project_by_id(project_id)
+        .map_err(AppError::db)?
+        .ok_or_else(|| AppError::not_found("Project not found"))?;
+
+    // Get all skills in this scenario
+    let skill_ids = store.get_skill_ids_for_scenario(scenario_id).map_err(AppError::db)?;
+
+    // Get all enabled/installed adapters
+    let adapters = tool_adapters::enabled_installed_adapters(store);
+
+    for skill_id in skill_ids {
+        let Ok(Some(skill)) = store.get_skill_by_id(&skill_id) else {
+            continue;
+        };
+
+        let source = PathBuf::from(&skill.central_path);
+        let target_name = sync_engine::target_dir_name(&source, &skill.name);
+
+        for adapter in &adapters {
+            // If scenario_skill_tools has no records for this skill (empty Vec),
+            // default to enabled for all installed agents
+            // If records exist, only enable if our adapter is in the list
+            let enabled_tools = store
+                .get_enabled_tools_for_scenario_skill(scenario_id, &skill_id)
+                .map_err(AppError::db)?;
+
+            let is_enabled = enabled_tools.is_empty() || enabled_tools.contains(&adapter.key);
+
+            if !is_enabled {
+                continue;
+            }
+
+            // Step 1: Create skill in project's shared .skills/ directory
+            let shared_target = resolve_project_skill_target(&project, &adapter.key, &target_name);
+            let mode = sync_engine::sync_mode_for_tool(&adapter.key, configured_mode.as_deref());
+
+            match sync_engine::sync_skill(&source, &shared_target, mode) {
+                Ok(actual_mode) => {
+                    let now = chrono::Utc::now().timestamp_millis();
+                    let target_record = SkillTargetRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        skill_id: skill_id.clone(),
+                        tool: adapter.key.clone(),
+                        target_path: shared_target.to_string_lossy().to_string(),
+                        mode: actual_mode.as_str().to_string(),
+                        status: "ok".to_string(),
+                        synced_at: Some(now),
+                        last_error: None,
+                    };
+                    if let Err(e) = store.insert_target(&target_record) {
+                        log::warn!("Failed to insert sync target for skill {skill_id}: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to sync skill {skill_id} to shared {}: {e}",
+                        shared_target.display()
+                    );
+                }
+            }
+
+            // Step 2: Create symlink in agent's project directory if it exists
+            let agent_symlink_path = resolve_agent_skill_symlink(&project, &adapter.key, &target_name);
+
+            // Only create symlink if the agent's skills directory exists in this project
+            if let Some(parent) = agent_symlink_path.parent() {
+                if parent.is_dir() {
+                    // The symlink should point to the shared skill
+                    // Use relative path from agent dir to shared dir
+                    let relative_to_shared = PathBuf::from("..")
+                        .join(".skills")
+                        .join(&target_name);
+
+                    match sync_engine::sync_skill(&shared_target, &agent_symlink_path, mode) {
+                        Ok(_) => {
+                            log::info!(
+                                "Created symlink {} -> {}",
+                                agent_symlink_path.display(),
+                                relative_to_shared.display()
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to create symlink {}: {e}",
+                                agent_symlink_path.display()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Resolve the target path for a skill within a project.
+/// Returns the path in the project's shared .skills/ directory.
+fn resolve_project_skill_target(project: &ProjectRecord, _agent_key: &str, skill_name: &str) -> PathBuf {
+    if project.workspace_type == "linked" {
+        // For linked workspaces, the skills are directly in the project path
+        return PathBuf::from(&project.path).join(skill_name);
+    }
+
+    // Use a shared .skills/ directory for all agents in the project
+    PathBuf::from(&project.path)
+        .join(".skills")
+        .join(skill_name)
+}
+
+/// Resolve the agent-specific symlink path within a project.
+/// This is where the agent's own skills directory expects the symlink.
+fn resolve_agent_skill_symlink(project: &ProjectRecord, agent_key: &str, skill_name: &str) -> PathBuf {
+    // Use the tool adapter's relative_skills_dir to find the agent's skills dir in project
+    let adapter = tool_adapters::find_adapter(agent_key);
+    let relative_dir = adapter
+        .map(|a| a.relative_skills_dir.clone())
+        .unwrap_or_else(|| agent_key.replace('_', "-").to_lowercase());
+
+    PathBuf::from(&project.path)
+        .join(&relative_dir)
+        .join(skill_name)
+}
+
+fn ensure_scenario_exists(store: &SkillStore, scenario_id: &str) -> Result<(), AppError> {
+    let exists = store
+        .get_all_scenarios()
+        .map_err(AppError::db)?
+        .iter()
+        .any(|s| s.id == scenario_id);
+    if !exists {
+        return Err(AppError::not_found("Scenario not found"));
+    }
+    Ok(())
+}
+
+pub(crate) fn enabled_installed_adapters_for_scenario_skill(
+    store: &SkillStore,
+    scenario_id: &str,
+    skill_id: &str,
+) -> Result<Vec<tool_adapters::ToolAdapter>, AppError> {
+    let adapters = tool_adapters::enabled_installed_adapters(store);
+    let adapter_keys: Vec<String> = adapters.iter().map(|a| a.key.clone()).collect();
+
+    store
+        .ensure_scenario_skill_tool_defaults(scenario_id, skill_id, &adapter_keys)
+        .map_err(AppError::db)?;
+
+    let enabled = store
+        .get_enabled_tools_for_scenario_skill(scenario_id, skill_id)
+        .map_err(AppError::db)?;
+    let enabled_set: HashSet<String> = enabled.into_iter().collect();
+
+    Ok(adapters
+        .into_iter()
+        .filter(|adapter| enabled_set.contains(&adapter.key))
+        .collect())
+}
+
 
 #[derive(Debug, Serialize)]
 pub struct ScenarioDto {
@@ -89,6 +310,33 @@ pub async fn get_active_scenario(
             }
         }
         Ok(None)
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn get_project_scenarios(
+    store: State<'_, Arc<SkillStore>>,
+    project_id: String,
+) -> Result<Vec<ScenarioDto>, AppError> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let scenarios = store.get_project_scenarios(&project_id).map_err(AppError::db)?;
+        let mut result = Vec::new();
+        for s in scenarios {
+            let count = store.count_skills_for_scenario(&s.id).unwrap_or(0);
+            result.push(ScenarioDto {
+                id: s.id,
+                name: s.name,
+                description: s.description,
+                icon: s.icon,
+                sort_order: s.sort_order,
+                skill_count: count,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+            });
+        }
+        Ok(result)
     })
     .await?
 }

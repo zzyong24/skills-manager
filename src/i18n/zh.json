@@ -700,6 +700,13 @@
     "batchUpdateProjectFailed": "{{count}} 个 Skill 更新到项目失败",
     "batchEditTags": "标签 ({{count}})",
     "batchTagsUpdated": "已更新 {{count}} 个中心 Skill 的标签",
-    "batchTagsFailed": "{{count}} 个中心 Skill 标签更新失败"
+    "batchTagsFailed": "{{count}} 个中心 Skill 标签更新失败",
+    "boundScenes": "绑定场景",
+    "addScene": "添加场景",
+    "noBoundScenes": "该项目尚未绑定任何场景",
+    "bindScene": "绑定场景到项目",
+    "searchScenes": "搜索场景...",
+    "noAvailableScenes": "没有可绑定的场景",
+    "sceneUnbound": "已解除场景绑定"
   }
 }

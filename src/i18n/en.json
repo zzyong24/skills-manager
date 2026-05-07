@@ -700,6 +700,13 @@
     "batchUpdateProjectFailed": "{{count}} skills failed to update in project",
     "batchEditTags": "Tags ({{count}})",
     "batchTagsUpdated": "Tags updated for {{count}} center skills",
-    "batchTagsFailed": "{{count}} center skills failed to update tags"
+    "batchTagsFailed": "{{count}} center skills failed to update tags",
+    "boundScenes": "Bound Scenes",
+    "addScene": "Add Scene",
+    "noBoundScenes": "No scenes bound to this project",
+    "bindScene": "Bind Scene to Project",
+    "searchScenes": "Search scenes...",
+    "noAvailableScenes": "No available scenes",
+    "sceneUnbound": "Scene unbound"
   }
 }

@@ -1030,6 +1030,77 @@ impl SkillStore {
         Ok(())
     }
 
+    // ── Project-Scenario Bindings (many-to-many) ──
+
+    /// Bind a scenario to a project. Creates symlinks for all skills in that scenario
+    /// targeting all installed agents.
+    pub fn bind_scenario_to_project(&self, project_id: &str, scenario_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO project_scenarios (project_id, scenario_id) VALUES (?1, ?2)",
+            params![project_id, scenario_id],
+        )?;
+        Ok(())
+    }
+
+    /// Unbind a scenario from a project. Removes symlinks for all skills in that scenario.
+    pub fn unbind_scenario_from_project(&self, project_id: &str, scenario_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM project_scenarios WHERE project_id = ?1 AND scenario_id = ?2",
+            params![project_id, scenario_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get all scenario IDs bound to a project.
+    pub fn get_project_scenario_ids(&self, project_id: &str) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT scenario_id FROM project_scenarios WHERE project_id = ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![project_id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Get all project IDs bound to a scenario. Useful for broadcasting.
+    pub fn get_scenario_project_ids(&self, scenario_id: &str) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT project_id FROM project_scenarios WHERE scenario_id = ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![scenario_id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Get all scenarios bound to a project.
+    pub fn get_project_scenarios(&self, project_id: &str) -> Result<Vec<ScenarioRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.name, s.description, s.icon, s.sort_order, s.created_at, s.updated_at
+             FROM scenarios s
+             INNER JOIN project_scenarios ps ON s.id = ps.scenario_id
+             WHERE ps.project_id = ?1
+             ORDER BY s.sort_order, s.name",
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ScenarioRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                icon: row.get(3)?,
+                sort_order: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     // ── Projects ──
 
     pub fn insert_project(&self, project: &ProjectRecord) -> Result<()> {

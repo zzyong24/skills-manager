@@ -749,6 +749,16 @@
     "noSkillsMatch": "No skills match the search",
     "addButton": "Add {{count}} skills",
     "addedToast": "Added {{count}} skills",
-    "removedToast": "Removed {{name}}"
+    "removedToast": "Removed {{name}}",
+    "selectMode": "Select",
+    "cancelSelect": "Cancel selection",
+    "selectHint": "Click skills to select",
+    "selectedCount": "{{count}} selected",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "deleteSelected": "Remove {{count}}",
+    "batchRemoveConfirm": "Remove {{count}} selected skills from {{agent}}? This only unlinks them from the global workspace; central library files are kept.",
+    "batchRemoved": "{{count}} skills removed",
+    "batchRemoveFailed": "{{count}} skills failed to remove"
   }
 }

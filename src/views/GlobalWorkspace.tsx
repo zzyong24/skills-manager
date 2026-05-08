@@ -10,6 +10,8 @@ import {
   Loader2,
   Plus,
   Search,
+  Square,
+  SquareCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -17,8 +19,11 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { cn } from "../utils";
 import { useApp } from "../context/AppContext";
+import { useMultiSelect } from "../hooks/useMultiSelect";
+import { MultiSelectToolbar } from "../components/MultiSelectToolbar";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PresetWorkspaceActionDialog } from "../components/PresetWorkspaceActionDialog";
-import { getTagColor } from "../lib/skillTags";
+import { getTagColor, getTagActiveColor } from "../lib/skillTags";
 import * as api from "../lib/tauri";
 import type { ManagedSkill, ToolInfo } from "../lib/tauri";
 import { getErrorMessage } from "../lib/error";
@@ -187,13 +192,15 @@ export function GlobalWorkspace() {
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
+  const [tagFilters, setTagFilters] = useState<Set<string>>(new Set());
   const [showPresetDialog, setShowPresetDialog] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [batchRemoveConfirm, setBatchRemoveConfirm] = useState(false);
+  const [batchRemoving, setBatchRemoving] = useState(false);
 
   const installedTools = useMemo(() => tools.filter((t) => t.installed && t.enabled), [tools]);
 
-  // Auto-navigate to first installed agent when no agentKey
   useEffect(() => {
     if (!agentKey && installedTools.length > 0) {
       navigate(`/global-workspace/${installedTools[0].key}`, { replace: true });
@@ -226,19 +233,49 @@ export function GlobalWorkspace() {
   );
 
   const filtered = useMemo(() => {
-    if (!search) return agentSkills;
-    const q = search.toLowerCase();
-    return agentSkills.filter(
-      (skill) =>
-        skill.name.toLowerCase().includes(q) ||
-        (skill.description || "").toLowerCase().includes(q)
-    );
-  }, [agentSkills, search]);
+    let result = agentSkills;
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (skill) =>
+          skill.name.toLowerCase().includes(q) ||
+          (skill.description || "").toLowerCase().includes(q)
+      );
+    }
+    if (tagFilters.size > 0) {
+      result = result.filter((skill) => skill.tags.some((tag) => tagFilters.has(tag)));
+    }
+    return result;
+  }, [agentSkills, search, tagFilters]);
+
+  const {
+    isMultiSelect, setIsMultiSelect,
+    selectedIds,
+    toggleSelect,
+    isAllSelected,
+    anyDisabled,
+    handleSelectAll,
+    exitMultiSelect,
+  } = useMultiSelect({
+    items: agentSkills,
+    filtered,
+    getKey: (s) => s.id,
+    isItemActive: () => true,
+  });
 
   const installedIds = useMemo(
     () => new Set(agentSkills.map((s) => s.id)),
     [agentSkills]
   );
+
+  const toggleTagFilter = (tag: string) => {
+    setTagFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
 
   const handleRemove = async (skill: ManagedSkill) => {
     if (!agentKey) return;
@@ -252,6 +289,28 @@ export function GlobalWorkspace() {
     } finally {
       setRemovingId(null);
     }
+  };
+
+  const handleBatchRemove = async () => {
+    if (!agentKey) return;
+    setBatchRemoving(true);
+    const ids = Array.from(selectedIds);
+    let removed = 0;
+    let failed = 0;
+    for (const skillId of ids) {
+      try {
+        await api.unsyncSkillFromTool(skillId, agentKey);
+        removed++;
+      } catch {
+        failed++;
+      }
+    }
+    await Promise.all([refreshManagedSkills(), refreshTools()]);
+    if (removed > 0) toast.success(t("globalWorkspace.batchRemoved", { count: removed }));
+    if (failed > 0) toast.error(t("globalWorkspace.batchRemoveFailed", { count: failed }));
+    exitMultiSelect();
+    setBatchRemoveConfirm(false);
+    setBatchRemoving(false);
   };
 
   const handleAddSkills = useCallback(
@@ -300,7 +359,6 @@ export function GlobalWorkspace() {
     await Promise.all([refreshManagedSkills(), refreshTools()]);
   }, [refreshManagedSkills, refreshTools]);
 
-  // No agents installed
   if (installedTools.length === 0) {
     return (
       <div className="app-page">
@@ -317,7 +375,6 @@ export function GlobalWorkspace() {
     );
   }
 
-  // Waiting for auto-redirect or unknown agent key
   if (!currentTool) return null;
 
   return (
@@ -352,18 +409,20 @@ export function GlobalWorkspace() {
 
       {/* Toolbar */}
       <div className="app-toolbar">
-        <div className="relative w-full max-w-[280px]">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("globalWorkspace.addSkillSearch")}
-            className="app-input w-full pl-9 font-medium"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-          />
+        <div className="flex flex-1 gap-3">
+          <div className="relative w-full max-w-[280px]">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("globalWorkspace.addSkillSearch")}
+              className="app-input w-full pl-9 font-medium"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
         </div>
 
         <div className="app-segmented">
@@ -385,8 +444,75 @@ export function GlobalWorkspace() {
           >
             <List className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => (isMultiSelect ? exitMultiSelect() : setIsMultiSelect(true))}
+            className={cn(
+              "rounded-md p-2 transition-colors outline-none",
+              isMultiSelect ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+            )}
+            title={isMultiSelect ? t("globalWorkspace.cancelSelect") : t("globalWorkspace.selectMode")}
+          >
+            <SquareCheck className="h-4 w-4" />
+          </button>
         </div>
       </div>
+
+      {/* Tag filters */}
+      {allTags.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1 px-1 -mt-2">
+          <span className="text-[12px] text-muted">{t("mySkills.tags.filter")}</span>
+          <button
+            onClick={() => setTagFilters(new Set())}
+            className={cn(
+              "rounded-full px-2.5 py-0.5 text-[12px] font-medium transition-colors",
+              tagFilters.size === 0
+                ? "bg-accent text-white"
+                : "bg-surface-hover text-muted hover:text-secondary"
+            )}
+          >
+            {t("mySkills.tags.allTags")}
+          </button>
+          {allTags.map((tag) => {
+            const active = tagFilters.has(tag);
+            return (
+              <button
+                key={tag}
+                onClick={() => toggleTagFilter(tag)}
+                className={cn(
+                  "rounded-full px-2.5 py-0.5 text-[12px] font-medium transition-colors",
+                  active ? getTagActiveColor(tag, allTags) : getTagColor(tag, allTags)
+                )}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Multi-select toolbar */}
+      {isMultiSelect && (
+        <MultiSelectToolbar
+          selectedCount={selectedIds.size}
+          isAllSelected={isAllSelected}
+          anyDisabled={anyDisabled}
+          showToggle={false}
+          labels={{
+            hint: t("globalWorkspace.selectHint"),
+            selected: t("globalWorkspace.selectedCount", { count: selectedIds.size }),
+            delete: t("globalWorkspace.deleteSelected", { count: selectedIds.size }),
+            enable: "",
+            disable: "",
+            selectAll: t("globalWorkspace.selectAll"),
+            deselectAll: t("globalWorkspace.deselectAll"),
+            cancel: t("common.cancel"),
+          }}
+          onDelete={() => setBatchRemoveConfirm(true)}
+          onToggle={() => {}}
+          onSelectAll={handleSelectAll}
+          onCancel={exitMultiSelect}
+        />
+      )}
 
       {/* Skills */}
       {filtered.length === 0 ? (
@@ -420,15 +546,27 @@ export function GlobalWorkspace() {
         >
           {filtered.map((skill) => {
             const removing = removingId === skill.id;
+            const isSelected = selectedIds.has(skill.id);
 
             if (viewMode === "grid") {
               return (
                 <div
                   key={skill.id}
-                  className="app-panel group relative flex h-full flex-col transition-all hover:border-border hover:bg-surface-hover"
+                  className={cn(
+                    "app-panel group relative flex h-full flex-col transition-all hover:border-border hover:bg-surface-hover",
+                    isMultiSelect && "cursor-pointer",
+                    isMultiSelect && isSelected && "ring-1 ring-accent border-accent/40"
+                  )}
+                  onClick={isMultiSelect ? () => toggleSelect(skill.id) : undefined}
                 >
                   <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    {isMultiSelect ? (
+                      isSelected
+                        ? <SquareCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+                        : <Square className="h-3.5 w-3.5 shrink-0 text-faint" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    )}
                     <h3
                       className="flex-1 truncate text-[14px] font-semibold text-primary"
                       title={skill.name}
@@ -459,16 +597,18 @@ export function GlobalWorkspace() {
                   </div>
 
                   <div className="mt-auto flex items-center justify-end border-t border-border-subtle px-3.5 py-2">
-                    <button
-                      onClick={() => handleRemove(skill)}
-                      disabled={removing}
-                      title={t("globalWorkspace.removeSkill")}
-                      className="rounded p-1 text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
-                    >
-                      {removing
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
+                    {!isMultiSelect && (
+                      <button
+                        onClick={() => handleRemove(skill)}
+                        disabled={removing}
+                        title={t("globalWorkspace.removeSkill")}
+                        className="rounded p-1 text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
+                      >
+                        {removing
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -478,9 +618,20 @@ export function GlobalWorkspace() {
             return (
               <div
                 key={skill.id}
-                className="app-panel group flex items-center gap-3.5 rounded-xl border-transparent px-3.5 py-3 transition-all hover:border-border hover:bg-surface-hover"
+                className={cn(
+                  "app-panel group flex items-center gap-3.5 rounded-xl border-transparent px-3.5 py-3 transition-all hover:border-border hover:bg-surface-hover",
+                  isMultiSelect && "cursor-pointer",
+                  isMultiSelect && isSelected && "ring-1 ring-accent border-accent/40"
+                )}
+                onClick={isMultiSelect ? () => toggleSelect(skill.id) : undefined}
               >
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                {isMultiSelect ? (
+                  isSelected
+                    ? <SquareCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+                    : <Square className="h-3.5 w-3.5 shrink-0 text-faint" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                )}
                 <h3
                   className="w-[180px] shrink-0 truncate text-[14px] font-semibold text-secondary"
                   title={skill.name}
@@ -505,16 +656,18 @@ export function GlobalWorkspace() {
                     ))}
                   </div>
                 )}
-                <button
-                  onClick={() => handleRemove(skill)}
-                  disabled={removing}
-                  title={t("globalWorkspace.removeSkill")}
-                  className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
-                >
-                  {removing
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Trash2 className="h-3.5 w-3.5" />}
-                </button>
+                {!isMultiSelect && (
+                  <button
+                    onClick={() => handleRemove(skill)}
+                    disabled={removing}
+                    title={t("globalWorkspace.removeSkill")}
+                    className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
+                  >
+                    {removing
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                )}
               </div>
             );
           })}
@@ -544,6 +697,19 @@ export function GlobalWorkspace() {
           onClose={() => setAddDialogOpen(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={batchRemoveConfirm}
+        title={t("globalWorkspace.removeSkill")}
+        message={t("globalWorkspace.batchRemoveConfirm", {
+          count: selectedIds.size,
+          agent: currentTool.display_name,
+        })}
+        tone="danger"
+        confirmLabel={batchRemoving ? undefined : t("globalWorkspace.deleteSelected", { count: selectedIds.size })}
+        onClose={() => setBatchRemoveConfirm(false)}
+        onConfirm={handleBatchRemove}
+      />
     </div>
   );
 }

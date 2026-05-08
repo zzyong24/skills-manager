@@ -681,6 +681,16 @@
     "noSkillsMatch": "沒有符合的 Skills",
     "addButton": "加入 {{count}} 個 Skill",
     "addedToast": "已加入 {{count}} 個 Skill",
-    "removedToast": "已移除 {{name}}"
+    "removedToast": "已移除 {{name}}",
+    "selectMode": "多選",
+    "cancelSelect": "取消選擇",
+    "selectHint": "點擊 Skill 以選取",
+    "selectedCount": "已選 {{count}} 個",
+    "selectAll": "全選",
+    "deselectAll": "取消全選",
+    "deleteSelected": "移除 {{count}} 個",
+    "batchRemoveConfirm": "從 {{agent}} 移除 {{count}} 個 Skills？此操作不會刪除技能庫中的資料。",
+    "batchRemoved": "已移除 {{count}} 個 Skill",
+    "batchRemoveFailed": "{{count}} 個 Skill 移除失敗"
   }
 }

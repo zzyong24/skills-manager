@@ -5,7 +5,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::core::skill_store::{ProjectRecord, SkillRecord, SkillStore};
-use crate::core::{error::AppError, installer, project_scanner, sync_engine, tool_adapters};
+use crate::core::{error::AppError, installer, project_scanner, scenario_service, sync_engine, tool_adapters};
 use crate::commands::scenarios::{sync_scenario_to_project, unsync_scenario_from_project};
 
 #[derive(Serialize, Default)]
@@ -635,8 +635,38 @@ pub async fn add_linked_workspace(
 #[tauri::command]
 pub async fn remove_project(store: State<'_, Arc<SkillStore>>, id: String) -> Result<(), AppError> {
     let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || store.delete_project(&id).map_err(AppError::db))
-        .await?
+    tauri::async_runtime::spawn_blocking(move || {
+        // Serialize with bind/unbind/delete-scenario to avoid racing symlink cleanup.
+        let _guard = crate::commands::scenarios::PROJECT_SCENARIO_MUTATION_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        // P0-4: before dropping the project row (which CASCADE-deletes all
+        // project_scenarios subscriptions), clean up the skill symlinks that
+        // Skills Manager itself wrote into the project directory on behalf of
+        // those subscriptions. Without this, removing a subscribed project
+        // would leave orphan symlinks on disk with no DB trace.
+        //
+        // Product contract: project_scenarios symlinks are Skills Manager's
+        // own artifacts and belong to the subscription lifecycle — they are
+        // NOT the user's original files, so cleaning them up does not violate
+        // the "project files will not be deleted" promise shown in the UI.
+        let subscribed_scenario_ids = store.get_project_scenario_ids(&id).unwrap_or_default();
+        for scenario_id in &subscribed_scenario_ids {
+            if let Err(e) = crate::commands::scenarios::unsync_scenario_from_project(
+                &store,
+                &id,
+                scenario_id,
+            ) {
+                log::warn!(
+                    "Failed to clean up scenario {scenario_id} symlinks while removing project {id}: {e}"
+                );
+            }
+        }
+
+        store.delete_project(&id).map_err(AppError::db)
+    })
+    .await?
 }
 
 #[tauri::command]
@@ -1118,6 +1148,21 @@ pub async fn bind_scenario_to_project(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // Serialize lifecycle mutations to project_scenarios across all commands
+        // (bind/unbind/delete-scenario/remove-project). Prevents a race where two
+        // concurrent unbinds each observe the other as "still covering" a skill
+        // and both skip removal of now-orphaned symlinks.
+        let _guard = crate::commands::scenarios::PROJECT_SCENARIO_MUTATION_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        // Validate both project and scenario exist before writing anything.
+        store
+            .get_project_by_id(&project_id)
+            .map_err(AppError::db)?
+            .ok_or_else(|| AppError::not_found("Project not found"))?;
+        scenario_service::ensure_scenario_exists(&store, &scenario_id)?;
+
         store
             .bind_scenario_to_project(&project_id, &scenario_id)
             .map_err(AppError::db)?;
@@ -1139,14 +1184,24 @@ pub async fn unbind_scenario_from_project(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // First unsync (remove symlinks) for all skills in this scenario
-        unsync_scenario_from_project(&store, &project_id, &scenario_id)
-            .map_err(AppError::db)?;
+        let _guard = crate::commands::scenarios::PROJECT_SCENARIO_MUTATION_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
 
-        // Then remove the binding
+        // Remove the DB binding FIRST so that the subsequent "covered_by_other"
+        // computation inside unsync_scenario_from_project sees the accurate set
+        // of remaining subscriptions. Doing it in this order is safe because
+        // unsync_scenario_from_project takes scenario_id explicitly — it does
+        // not re-derive which scenario to operate on from the DB.
         store
             .unbind_scenario_from_project(&project_id, &scenario_id)
             .map_err(AppError::db)?;
+
+        // Then unsync (remove symlinks) for skills that are no longer covered
+        // by any remaining bound scenario.
+        unsync_scenario_from_project(&store, &project_id, &scenario_id)
+            .map_err(AppError::db)?;
+
         Ok(())
     })
     .await?

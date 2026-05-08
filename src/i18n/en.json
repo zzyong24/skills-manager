@@ -707,6 +707,7 @@
     "bindScene": "Bind Scene to Project",
     "searchScenes": "Search scenes...",
     "noAvailableScenes": "No available scenes",
-    "sceneUnbound": "Scene unbound"
+    "sceneUnbound": "Scene unbound",
+    "sceneBound": "Scene bound"
   }
 }

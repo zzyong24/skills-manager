@@ -1,15 +1,22 @@
 use serde::Serialize;
-use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 use crate::core::{
     error::AppError,
     scenario_service,
-    skill_store::{ProjectRecord, ScenarioRecord, SkillStore, SkillTargetRecord},
-    sync_engine, sync_metadata, tool_adapters,
+    skill_store::{ScenarioRecord, SkillStore, SkillTargetRecord},
+    sync_engine, sync_metadata,
 };
+
+/// Serializes lifecycle mutations to the project_scenarios relationship
+/// (bind/unbind/delete-scenario/remove-project). Prevents races where two
+/// concurrent unbinds both observe each other as "still covering" a skill
+/// and neither ends up removing the orphaned symlink.
+///
+/// Held only for the duration of the blocking DB + filesystem work.
+pub(crate) static PROJECT_SCENARIO_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 fn refresh_tray_menu_best_effort(app: &tauri::AppHandle) {
     if let Err(err) = crate::refresh_tray_menu(app) {
@@ -28,56 +35,54 @@ pub(crate) fn sync_skill_to_active_scenario(
 }
 
 /// Remove all skill symlinks for a scenario from a project (used when unbinding).
+/// Skips skills that are also covered by another scenario bound to the same project.
 pub(crate) fn unsync_scenario_from_project(
     store: &SkillStore,
     project_id: &str,
     scenario_id: &str,
 ) -> Result<(), AppError> {
-    // Get project record
     let project = store
         .get_project_by_id(project_id)
         .map_err(AppError::db)?
         .ok_or_else(|| AppError::not_found("Project not found"))?;
 
-    // Get all skills in this scenario
-    let skill_ids = store.get_skill_ids_for_scenario(scenario_id).map_err(AppError::db)?;
+    // Collect skills covered by other scenarios bound to this project — don't remove those.
+    let other_scenario_ids = store
+        .get_project_scenario_ids(project_id)
+        .map_err(AppError::db)?;
+    let mut covered_skill_ids: std::collections::HashSet<String> = Default::default();
+    for sid in other_scenario_ids.iter().filter(|sid| sid.as_str() != scenario_id) {
+        let ids = store.get_skill_ids_for_scenario(sid).unwrap_or_default();
+        covered_skill_ids.extend(ids);
+    }
 
-    // Get all enabled/installed adapters
-    let adapters = tool_adapters::enabled_installed_adapters(store);
+    let skill_ids = store
+        .get_skill_ids_for_scenario(scenario_id)
+        .map_err(AppError::db)?;
 
-    for skill_id in skill_ids {
-        let Ok(Some(skill)) = store.get_skill_by_id(&skill_id) else {
+    for skill_id in &skill_ids {
+        if covered_skill_ids.contains(skill_id) {
             continue;
-        };
+        }
 
-        let target_name = sync_engine::target_dir_name(
-            &std::path::PathBuf::from(&skill.central_path),
-            &skill.name,
-        );
-
-        for adapter in &adapters {
-            let target = resolve_project_skill_target(&project, &adapter.key, &target_name);
-
-            // Remove the symlink if it exists
-            if let Err(e) = sync_engine::remove_target(&target) {
-                log::warn!("Failed to remove target {}: {e}", target.display());
+        let targets = store.get_targets_for_skill(skill_id).unwrap_or_default();
+        for target in &targets {
+            let path = PathBuf::from(&target.target_path);
+            // Only remove targets that live inside this project's directory.
+            if scenario_service::path_is_under(&path, Path::new(&project.path)) {
+                if let Err(e) = sync_engine::remove_target(&path) {
+                    log::warn!("Failed to remove target {}: {e}", path.display());
+                }
+                let _ = store.delete_target(skill_id, &target.tool);
             }
-
-            // Delete the target record
-            let _ = store.delete_target(&skill_id, &adapter.key);
         }
     }
 
     Ok(())
 }
 
-/// Sync all skills in a scenario to a specific project's skill directories.
-/// This is called when binding a scenario to a project.
-///
-/// For each skill:
-/// 1. Creates the skill in project's .skills/ directory (shared source)
-/// 2. For each agent that has opened this project (agent dir exists), creates a symlink
-///    pointing to project/.skills/skill-name
+/// Sync all skills in a scenario to a specific project's skill directory.
+/// Called when binding a scenario to a project.
 pub(crate) fn sync_scenario_to_project(
     store: &SkillStore,
     project_id: &str,
@@ -85,17 +90,14 @@ pub(crate) fn sync_scenario_to_project(
 ) -> Result<(), AppError> {
     let configured_mode = store.get_setting("sync_mode").map_err(AppError::db)?;
 
-    // Get project record to resolve project-specific paths
     let project = store
         .get_project_by_id(project_id)
         .map_err(AppError::db)?
         .ok_or_else(|| AppError::not_found("Project not found"))?;
 
-    // Get all skills in this scenario
-    let skill_ids = store.get_skill_ids_for_scenario(scenario_id).map_err(AppError::db)?;
-
-    // Get all enabled/installed adapters
-    let adapters = tool_adapters::enabled_installed_adapters(store);
+    let skill_ids = store
+        .get_skill_ids_for_scenario(scenario_id)
+        .map_err(AppError::db)?;
 
     for skill_id in skill_ids {
         let Ok(Some(skill)) = store.get_skill_by_id(&skill_id) else {
@@ -105,76 +107,43 @@ pub(crate) fn sync_scenario_to_project(
         let source = PathBuf::from(&skill.central_path);
         let target_name = sync_engine::target_dir_name(&source, &skill.name);
 
+        let adapters = scenario_service::enabled_installed_adapters_for_scenario_skill(
+            store,
+            scenario_id,
+            &skill_id,
+        )?;
+
         for adapter in &adapters {
-            // If scenario_skill_tools has no records for this skill (empty Vec),
-            // default to enabled for all installed agents
-            // If records exist, only enable if our adapter is in the list
-            let enabled_tools = store
-                .get_enabled_tools_for_scenario_skill(scenario_id, &skill_id)
-                .map_err(AppError::db)?;
-
-            let is_enabled = enabled_tools.is_empty() || enabled_tools.contains(&adapter.key);
-
-            if !is_enabled {
-                continue;
-            }
-
-            // Step 1: Create skill in project's shared .skills/ directory
-            let shared_target = resolve_project_skill_target(&project, &adapter.key, &target_name);
+            let Some(target) = scenario_service::resolve_project_skill_target(
+                &project,
+                adapter,
+                &target_name,
+            ) else {
+                continue; // tool not used in this project, skip
+            };
             let mode = sync_engine::sync_mode_for_tool(&adapter.key, configured_mode.as_deref());
 
-            match sync_engine::sync_skill(&source, &shared_target, mode) {
+            match sync_engine::sync_skill(&source, &target, mode) {
                 Ok(actual_mode) => {
                     let now = chrono::Utc::now().timestamp_millis();
-                    let target_record = SkillTargetRecord {
+                    let record = SkillTargetRecord {
                         id: uuid::Uuid::new_v4().to_string(),
                         skill_id: skill_id.clone(),
                         tool: adapter.key.clone(),
-                        target_path: shared_target.to_string_lossy().to_string(),
+                        target_path: target.to_string_lossy().to_string(),
                         mode: actual_mode.as_str().to_string(),
                         status: "ok".to_string(),
                         synced_at: Some(now),
                         last_error: None,
                     };
-                    if let Err(e) = store.insert_target(&target_record) {
+                    if let Err(e) = store.insert_target(&record) {
                         log::warn!("Failed to insert sync target for skill {skill_id}: {e}");
                     }
                 }
                 Err(e) => {
                     log::warn!(
-                        "Failed to sync skill {skill_id} to shared {}: {e}",
-                        shared_target.display()
+                        "Failed to sync skill {skill_id} to project {project_id}: {e}"
                     );
-                }
-            }
-
-            // Step 2: Create symlink in agent's project directory if it exists
-            let agent_symlink_path = resolve_agent_skill_symlink(&project, &adapter.key, &target_name);
-
-            // Only create symlink if the agent's skills directory exists in this project
-            if let Some(parent) = agent_symlink_path.parent() {
-                if parent.is_dir() {
-                    // The symlink should point to the shared skill
-                    // Use relative path from agent dir to shared dir
-                    let relative_to_shared = PathBuf::from("..")
-                        .join(".skills")
-                        .join(&target_name);
-
-                    match sync_engine::sync_skill(&shared_target, &agent_symlink_path, mode) {
-                        Ok(_) => {
-                            log::info!(
-                                "Created symlink {} -> {}",
-                                agent_symlink_path.display(),
-                                relative_to_shared.display()
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to create symlink {}: {e}",
-                                agent_symlink_path.display()
-                            );
-                        }
-                    }
                 }
             }
         }
@@ -182,71 +151,6 @@ pub(crate) fn sync_scenario_to_project(
 
     Ok(())
 }
-
-/// Resolve the target path for a skill within a project.
-/// Returns the path in the project's shared .skills/ directory.
-fn resolve_project_skill_target(project: &ProjectRecord, _agent_key: &str, skill_name: &str) -> PathBuf {
-    if project.workspace_type == "linked" {
-        // For linked workspaces, the skills are directly in the project path
-        return PathBuf::from(&project.path).join(skill_name);
-    }
-
-    // Use a shared .skills/ directory for all agents in the project
-    PathBuf::from(&project.path)
-        .join(".skills")
-        .join(skill_name)
-}
-
-/// Resolve the agent-specific symlink path within a project.
-/// This is where the agent's own skills directory expects the symlink.
-fn resolve_agent_skill_symlink(project: &ProjectRecord, agent_key: &str, skill_name: &str) -> PathBuf {
-    // Use the tool adapter's relative_skills_dir to find the agent's skills dir in project
-    let adapter = tool_adapters::find_adapter(agent_key);
-    let relative_dir = adapter
-        .map(|a| a.relative_skills_dir.clone())
-        .unwrap_or_else(|| agent_key.replace('_', "-").to_lowercase());
-
-    PathBuf::from(&project.path)
-        .join(&relative_dir)
-        .join(skill_name)
-}
-
-fn ensure_scenario_exists(store: &SkillStore, scenario_id: &str) -> Result<(), AppError> {
-    let exists = store
-        .get_all_scenarios()
-        .map_err(AppError::db)?
-        .iter()
-        .any(|s| s.id == scenario_id);
-    if !exists {
-        return Err(AppError::not_found("Scenario not found"));
-    }
-    Ok(())
-}
-
-pub(crate) fn enabled_installed_adapters_for_scenario_skill(
-    store: &SkillStore,
-    scenario_id: &str,
-    skill_id: &str,
-) -> Result<Vec<tool_adapters::ToolAdapter>, AppError> {
-    let adapters = tool_adapters::enabled_installed_adapters(store);
-    let adapter_keys: Vec<String> = adapters.iter().map(|a| a.key.clone()).collect();
-
-    store
-        .ensure_scenario_skill_tool_defaults(scenario_id, skill_id, &adapter_keys)
-        .map_err(AppError::db)?;
-
-    let enabled = store
-        .get_enabled_tools_for_scenario_skill(scenario_id, skill_id)
-        .map_err(AppError::db)?;
-    let enabled_set: HashSet<String> = enabled.into_iter().collect();
-
-    Ok(adapters
-        .into_iter()
-        .filter(|adapter| enabled_set.contains(&adapter.key))
-        .collect())
-}
-
-
 #[derive(Debug, Serialize)]
 pub struct ScenarioDto {
     pub id: String,
@@ -426,6 +330,10 @@ pub async fn delete_scenario(
 ) -> Result<(), AppError> {
     let store = store.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        // Serialize project-scenario lifecycle mutations to avoid races with
+        // bind/unbind/delete across scenarios touching the same project.
+        let _guard = PROJECT_SCENARIO_MUTATION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+
         let was_active = store
             .get_active_scenario_id()
             .map_err(AppError::db)?
@@ -434,6 +342,23 @@ pub async fn delete_scenario(
 
         if was_active {
             unsync_scenario_skills(&store, &id)?;
+        }
+
+        // P0-3: clean up skill symlinks in every project that subscribed to this scenario
+        // BEFORE the DB row (and its CASCADE) wipes the project_scenarios relationship.
+        // Without this, deleting a subscribed scenario leaves orphan symlinks in project dirs
+        // with no DB trace.
+        let subscribed_project_ids = store
+            .get_scenario_project_ids(&id)
+            .map_err(AppError::db)?;
+        for project_id in &subscribed_project_ids {
+            if let Err(e) = unsync_scenario_from_project(&store, project_id, &id) {
+                // Log and continue — best-effort cleanup; the DB CASCADE will still drop the
+                // subscription row, so leftover files are acceptable over aborting the delete.
+                log::warn!(
+                    "Failed to clean up scenario {id} symlinks in project {project_id}: {e}"
+                );
+            }
         }
 
         sync_metadata::with_repo_lock("delete scenario", || {
@@ -519,6 +444,10 @@ pub async fn add_skill_to_scenario(
 
         sync_skill_to_active_scenario(&store, &scenario_id, &skill_id)?;
 
+        // Broadcast to all projects that have subscribed to this scenario.
+        scenario_service::sync_skill_to_bound_projects(&store, &scenario_id, &skill_id)
+            .unwrap_or_else(|e| log::warn!("Failed to broadcast skill add to bound projects: {e}"));
+
         Ok(())
     })
     .await?;
@@ -543,12 +472,28 @@ pub async fn remove_skill_from_scenario(
         })
         .map_err(AppError::db)?;
 
-        // If this is the active scenario, unsync the skill
+        // If this is the active scenario, unsync the skill from global (non-project) targets only.
+        // Project-level targets are handled separately by unsync_skill_from_bound_projects below.
         if let Ok(Some(active_id)) = store.get_active_scenario_id() {
             if active_id == scenario_id {
+                // Collect all known project paths so we can exclude project-level targets.
+                let project_paths: Vec<std::path::PathBuf> = store
+                    .get_all_projects()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|p| std::path::PathBuf::from(p.path))
+                    .collect();
+
                 let targets = store.get_targets_for_skill(&skill_id).unwrap_or_default();
                 for target in &targets {
                     let path = PathBuf::from(&target.target_path);
+                    // Only remove global targets — skip anything living inside a project dir.
+                    let is_project_target = project_paths.iter().any(|proj| {
+                        scenario_service::path_is_under(&path, proj)
+                    });
+                    if is_project_target {
+                        continue;
+                    }
                     if let Err(e) = sync_engine::remove_target(&path) {
                         log::warn!("Failed to remove sync target {}: {e}", path.display());
                     }
@@ -561,6 +506,10 @@ pub async fn remove_skill_from_scenario(
                 }
             }
         }
+
+        // Broadcast removal to all projects that have subscribed to this scenario.
+        scenario_service::unsync_skill_from_bound_projects(&store, &scenario_id, &skill_id)
+            .unwrap_or_else(|e| log::warn!("Failed to broadcast skill remove to bound projects: {e}"));
 
         Ok(())
     })
@@ -833,5 +782,480 @@ mod tests {
         assert!(targets.iter().any(|target| {
             target.skill_id == "second" && target.target_path.ends_with("skill123-2")
         }));
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Regression tests for the project-scenario subscription lifecycle.
+    // Added 2026-05-08 to lock down P0 bugs fixed in this PR.
+    // ──────────────────────────────────────────────────────────────────
+
+    use crate::core::skill_store::ProjectRecord;
+    use crate::core::scenario_service;
+
+    /// Build a non-linked project at `project_path`, creating the `.claude/`
+    /// detect dir so resolve_project_skill_target returns a real target path.
+    fn insert_project_with_claude(
+        store: &SkillStore,
+        id: &str,
+        project_path: &std::path::Path,
+    ) -> ProjectRecord {
+        fs::create_dir_all(project_path.join(".claude")).unwrap();
+        let record = ProjectRecord {
+            id: id.to_string(),
+            name: id.to_string(),
+            path: project_path.to_string_lossy().to_string(),
+            workspace_type: "project".to_string(),
+            linked_agent_key: None,
+            linked_agent_name: None,
+            disabled_path: None,
+            sort_order: 0,
+            created_at: 1,
+            updated_at: 1,
+        };
+        store.insert_project(&record).unwrap();
+        record
+    }
+
+    /// P0-1 regression: removing a skill from the active scenario must NOT
+    /// delete symlinks that live inside subscribed project directories. Those
+    /// are owned by the subscription and get cleaned up via the bound-projects
+    /// broadcast, not the active-scenario global sweep.
+    #[cfg(unix)]
+    #[test]
+    fn remove_skill_from_active_scenario_does_not_delete_project_symlinks() {
+        let tmp = tempdir().unwrap();
+        let store = SkillStore::new(&tmp.path().join("test.db")).unwrap();
+        let source_base = tmp.path().join("central");
+        let project_path = tmp.path().join("proj");
+        fs::create_dir_all(&source_base).unwrap();
+
+        // Use the custom-tool escape hatch to keep the test hermetic — point
+        // the global skills_dir at an isolated temp location so built-in
+        // adapters don't probe the real $HOME.
+        let global_target = tmp.path().join("global-agent");
+        fs::create_dir_all(&global_target).unwrap();
+        configure_single_custom_tool(&store, &global_target);
+
+        store
+            .insert_scenario(&sample_scenario("s1", "S1"))
+            .unwrap();
+        let skill_dir = write_skill_dir(&source_base, "my-skill");
+        store
+            .insert_skill(&sample_skill("sk", "my-skill", &skill_dir))
+            .unwrap();
+        store.add_skill_to_scenario("s1", "sk").unwrap();
+        store.set_active_scenario("s1").unwrap();
+
+        // Project has a project-level target directly inserted to mimic
+        // what bind_scenario_to_project would have written.
+        insert_project_with_claude(&store, "p1", &project_path);
+        let project_skill_target = project_path.join(".claude/skills/my-skill");
+        fs::create_dir_all(project_skill_target.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&skill_dir, &project_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t-project".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "claude_code".to_string(),
+                target_path: project_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+
+        // Also put a non-project global target to make sure global IS cleaned.
+        let global_skill_target = global_target.join("my-skill");
+        std::os::unix::fs::symlink(&skill_dir, &global_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t-global".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "test_agent".to_string(),
+                target_path: global_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+
+        // Subscribe project p1 to scenario s1 so the project target is known
+        // to the subscription system.
+        store.bind_scenario_to_project("p1", "s1").unwrap();
+
+        // Exercise the active-scenario global-sweep branch from
+        // remove_skill_from_scenario: collect project paths, exclude any target
+        // that is under any project path, delete the rest.
+        let project_paths: Vec<std::path::PathBuf> = store
+            .get_all_projects()
+            .unwrap()
+            .into_iter()
+            .map(|p| std::path::PathBuf::from(p.path))
+            .collect();
+        let targets = store.get_targets_for_skill("sk").unwrap();
+        for t in &targets {
+            let path = PathBuf::from(&t.target_path);
+            let is_project_target = project_paths
+                .iter()
+                .any(|proj| scenario_service::path_is_under(&path, proj));
+            if is_project_target {
+                continue;
+            }
+            sync_engine::remove_target(&path).unwrap();
+            store.delete_target("sk", &t.tool).unwrap();
+        }
+
+        // Assertions: project target must survive, global target must be gone.
+        assert!(
+            project_skill_target.is_symlink(),
+            "project symlink must be preserved"
+        );
+        assert!(!global_skill_target.exists(), "global symlink must be cleaned");
+    }
+
+    /// P0-2 regression: cleanup must use path-component comparison, not byte
+    /// prefix. A project named `/tmp/proj-legacy` must NOT be affected when
+    /// we clean up artifacts for `/tmp/proj`.
+    #[cfg(unix)]
+    #[test]
+    fn unbind_scenario_does_not_affect_sibling_project_with_same_prefix() {
+        let tmp = tempdir().unwrap();
+        let store = SkillStore::new(&tmp.path().join("test.db")).unwrap();
+        let source_base = tmp.path().join("central");
+        fs::create_dir_all(&source_base).unwrap();
+
+        let target_base = tmp.path().join("agent-skills");
+        fs::create_dir_all(&target_base).unwrap();
+        configure_single_custom_tool(&store, &target_base);
+
+        // Two project directories whose names share a common prefix.
+        let proj = tmp.path().join("proj");
+        let proj_legacy = tmp.path().join("proj-legacy");
+        fs::create_dir_all(proj.join(".claude")).unwrap();
+        fs::create_dir_all(proj_legacy.join(".claude")).unwrap();
+
+        store
+            .insert_project(&ProjectRecord {
+                id: "proj".to_string(),
+                name: "proj".to_string(),
+                path: proj.to_string_lossy().to_string(),
+                workspace_type: "project".to_string(),
+                linked_agent_key: None,
+                linked_agent_name: None,
+                disabled_path: None,
+                sort_order: 0,
+                created_at: 1,
+                updated_at: 1,
+            })
+            .unwrap();
+
+        // Pretend a skill target lives inside proj-legacy. The cleanup routine
+        // for `proj` must NOT treat it as being under `proj`.
+        let legacy_target = proj_legacy.join(".claude").join("skills").join("foo");
+        let under = scenario_service::path_is_under(&legacy_target, &proj);
+        assert!(
+            !under,
+            "path_is_under must not match sibling project with shared name prefix"
+        );
+
+        // Conversely, a real descendant of `proj` must match.
+        let own_target = proj.join(".claude").join("skills").join("foo");
+        assert!(
+            scenario_service::path_is_under(&own_target, &proj),
+            "path_is_under must match genuine descendants"
+        );
+    }
+
+    /// P0-3 regression: deleting a scenario must remove the symlinks that
+    /// subscribed projects hold for that scenario's skills, even though the
+    /// scenario row (and its project_scenarios rows via CASCADE) is about to
+    /// disappear.
+    #[cfg(unix)]
+    #[test]
+    fn delete_scenario_cleans_up_subscribed_project_symlinks() {
+        let tmp = tempdir().unwrap();
+        let store = SkillStore::new(&tmp.path().join("test.db")).unwrap();
+        let source_base = tmp.path().join("central");
+        let project_path = tmp.path().join("proj");
+        fs::create_dir_all(&source_base).unwrap();
+
+        // No global adapters — we only care about project-side cleanup here.
+        let target_base = tmp.path().join("agent-skills-unused");
+        fs::create_dir_all(&target_base).unwrap();
+        configure_single_custom_tool(&store, &target_base);
+
+        store
+            .insert_scenario(&sample_scenario("s1", "S1"))
+            .unwrap();
+        let skill_dir = write_skill_dir(&source_base, "my-skill");
+        store
+            .insert_skill(&sample_skill("sk", "my-skill", &skill_dir))
+            .unwrap();
+        store.add_skill_to_scenario("s1", "sk").unwrap();
+
+        insert_project_with_claude(&store, "p1", &project_path);
+        let project_skill_target = project_path.join(".claude/skills/my-skill");
+        fs::create_dir_all(project_skill_target.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&skill_dir, &project_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t1".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "claude_code".to_string(),
+                target_path: project_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+        store.bind_scenario_to_project("p1", "s1").unwrap();
+
+        assert!(project_skill_target.is_symlink(), "precondition: symlink should exist");
+
+        // Simulate the P0-3 fix: iterate subscribed projects and unsync before
+        // deleting the scenario.
+        let subscribed = store.get_scenario_project_ids("s1").unwrap();
+        for project_id in &subscribed {
+            unsync_scenario_from_project(&store, project_id, "s1").unwrap();
+        }
+        store.delete_scenario("s1").unwrap();
+
+        assert!(
+            !project_skill_target.exists(),
+            "subscribed-project symlink must be removed when its source scenario is deleted"
+        );
+        assert!(
+            skill_dir.exists(),
+            "central skill dir must be untouched — we only removed the symlink"
+        );
+    }
+
+    /// P0-4 regression: removing a project must clean up the skill symlinks
+    /// that its subscriptions put into the project directory. Central-repo
+    /// files must remain untouched.
+    #[cfg(unix)]
+    #[test]
+    fn remove_project_cleans_up_subscription_symlinks() {
+        let tmp = tempdir().unwrap();
+        let store = SkillStore::new(&tmp.path().join("test.db")).unwrap();
+        let source_base = tmp.path().join("central");
+        let project_path = tmp.path().join("proj");
+        fs::create_dir_all(&source_base).unwrap();
+
+        let target_base = tmp.path().join("agent-skills-unused");
+        fs::create_dir_all(&target_base).unwrap();
+        configure_single_custom_tool(&store, &target_base);
+
+        store
+            .insert_scenario(&sample_scenario("s1", "S1"))
+            .unwrap();
+        let skill_dir = write_skill_dir(&source_base, "my-skill");
+        store
+            .insert_skill(&sample_skill("sk", "my-skill", &skill_dir))
+            .unwrap();
+        store.add_skill_to_scenario("s1", "sk").unwrap();
+
+        insert_project_with_claude(&store, "p1", &project_path);
+        let project_skill_target = project_path.join(".claude/skills/my-skill");
+        fs::create_dir_all(project_skill_target.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&skill_dir, &project_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t1".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "claude_code".to_string(),
+                target_path: project_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+        store.bind_scenario_to_project("p1", "s1").unwrap();
+
+        assert!(project_skill_target.is_symlink(), "precondition: symlink should exist");
+
+        // Simulate the P0-4 fix: iterate subscribed scenarios and unsync
+        // before dropping the project row.
+        let subscribed = store.get_project_scenario_ids("p1").unwrap();
+        for scenario_id in &subscribed {
+            unsync_scenario_from_project(&store, "p1", scenario_id).unwrap();
+        }
+        store.delete_project("p1").unwrap();
+
+        assert!(
+            !project_skill_target.exists(),
+            "subscription-owned symlink must be removed when project is removed"
+        );
+        assert!(
+            skill_dir.exists(),
+            "central skill source must remain — removing a project only affects its own dir"
+        );
+    }
+
+    /// P0-5 regression: app startup runs `unsync_scenario_skills` on the
+    /// previously-active scenario when switching to the configured default.
+    /// That sweep must NOT touch symlinks in subscribed project directories,
+    /// otherwise users see "bound" scenes in the UI but missing skill files
+    /// on disk after every restart.
+    ///
+    /// Reproduction without the fix:
+    ///   1. Bind project P to scenario S
+    ///   2. App writes ~/work/proj/.claude/skills/foo
+    ///   3. Restart app — startup picks default scenario, calls
+    ///      `unsync_scenario_skills(S)` which deletes ALL targets of S's skills
+    ///   4. ~/work/proj/.claude/skills/foo is gone, DB still says P is bound to S
+    #[cfg(unix)]
+    #[test]
+    fn unsync_scenario_skills_preserves_subscribed_project_symlinks() {
+        let tmp = tempdir().unwrap();
+        let store = SkillStore::new(&tmp.path().join("test.db")).unwrap();
+        let source_base = tmp.path().join("central");
+        let project_path = tmp.path().join("proj");
+        fs::create_dir_all(&source_base).unwrap();
+
+        let global_target = tmp.path().join("global-agent");
+        fs::create_dir_all(&global_target).unwrap();
+        configure_single_custom_tool(&store, &global_target);
+
+        store
+            .insert_scenario(&sample_scenario("dev", "Dev"))
+            .unwrap();
+        let skill_dir = write_skill_dir(&source_base, "agent-manage-build");
+        store
+            .insert_skill(&sample_skill("sk", "agent-manage-build", &skill_dir))
+            .unwrap();
+        store.add_skill_to_scenario("dev", "sk").unwrap();
+
+        // Project subscribes to the dev scenario.
+        insert_project_with_claude(&store, "p1", &project_path);
+        let project_skill_target = project_path.join(".claude/skills/agent-manage-build");
+        fs::create_dir_all(project_skill_target.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&skill_dir, &project_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t-project".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "claude_code".to_string(),
+                target_path: project_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+        store.bind_scenario_to_project("p1", "dev").unwrap();
+
+        // Also a global target so we verify global IS still cleaned.
+        let global_skill_target = global_target.join("agent-manage-build");
+        std::os::unix::fs::symlink(&skill_dir, &global_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t-global".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "test_agent".to_string(),
+                target_path: global_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+
+        // Simulate the startup path: switch active scenario away from "dev",
+        // which calls unsync_scenario_skills("dev").
+        scenario_service::unsync_scenario_skills(&store, "dev").unwrap();
+
+        // The subscribed project symlink MUST survive — its lifecycle is owned
+        // by the subscription, not by the active-scenario sweep.
+        assert!(
+            project_skill_target.is_symlink(),
+            "subscribed project symlink must survive startup unsync sweep"
+        );
+        // The DB target row for the project must also survive.
+        let remaining: Vec<_> = store
+            .get_targets_for_skill("sk")
+            .unwrap()
+            .into_iter()
+            .filter(|t| t.target_path.contains("proj/.claude"))
+            .collect();
+        assert_eq!(
+            remaining.len(),
+            1,
+            "project-level skill_targets row must be preserved"
+        );
+
+        // The global target SHOULD be cleaned — that's the whole point of
+        // unsync_scenario_skills.
+        assert!(
+            !global_skill_target.exists(),
+            "global symlink must still be cleaned by unsync_scenario_skills"
+        );
+    }
+
+    /// P0-5 regression for the "Apply to Default" path: switching the active
+    /// scenario via apply_scenario_to_default → unsync_obsolete_scenario_targets
+    /// must also leave subscribed project symlinks alone.
+    #[cfg(unix)]
+    #[test]
+    fn unsync_obsolete_scenario_targets_preserves_subscribed_project_symlinks() {
+        let tmp = tempdir().unwrap();
+        let store = SkillStore::new(&tmp.path().join("test.db")).unwrap();
+        let source_base = tmp.path().join("central");
+        let project_path = tmp.path().join("proj");
+        fs::create_dir_all(&source_base).unwrap();
+
+        let global_target = tmp.path().join("global-agent");
+        fs::create_dir_all(&global_target).unwrap();
+        configure_single_custom_tool(&store, &global_target);
+
+        // Two scenarios — switch from "dev" to "release".
+        store
+            .insert_scenario(&sample_scenario("dev", "Dev"))
+            .unwrap();
+        store
+            .insert_scenario(&sample_scenario("release", "Release"))
+            .unwrap();
+
+        let skill_dir = write_skill_dir(&source_base, "swagger-sync");
+        store
+            .insert_skill(&sample_skill("sk", "swagger-sync", &skill_dir))
+            .unwrap();
+        store.add_skill_to_scenario("dev", "sk").unwrap();
+
+        insert_project_with_claude(&store, "p1", &project_path);
+        let project_skill_target = project_path.join(".claude/skills/swagger-sync");
+        fs::create_dir_all(project_skill_target.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&skill_dir, &project_skill_target).unwrap();
+        store
+            .insert_target(&SkillTargetRecord {
+                id: "t-project".to_string(),
+                skill_id: "sk".to_string(),
+                tool: "claude_code".to_string(),
+                target_path: project_skill_target.to_string_lossy().to_string(),
+                mode: "symlink".to_string(),
+                status: "ok".to_string(),
+                synced_at: Some(1),
+                last_error: None,
+            })
+            .unwrap();
+        store.bind_scenario_to_project("p1", "dev").unwrap();
+        store.set_active_scenario("dev").unwrap();
+
+        // "release" doesn't contain "sk", so its desired_targets is empty.
+        // Without the fix, unsync_obsolete_scenario_targets would wipe ALL of
+        // dev's targets, including the subscribed project's symlink.
+        let desired_targets =
+            collect_scenario_sync_targets(&store, "release").unwrap();
+        scenario_service::unsync_obsolete_scenario_targets(&store, "dev", &desired_targets)
+            .unwrap();
+
+        assert!(
+            project_skill_target.is_symlink(),
+            "subscribed project symlink must survive 'Apply to Default' switch"
+        );
     }
 }

@@ -707,6 +707,7 @@
     "bindScene": "绑定场景到项目",
     "searchScenes": "搜索场景...",
     "noAvailableScenes": "没有可绑定的场景",
-    "sceneUnbound": "已解除场景绑定"
+    "sceneUnbound": "已解除场景绑定",
+    "sceneBound": "场景已绑定"
   }
 }

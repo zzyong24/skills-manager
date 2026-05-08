@@ -180,6 +180,11 @@ export function ProjectDetail() {
   });
   const [boundScenes, setBoundScenes] = useState<{ id: string; name: string }[]>([]);
   const [showScenePicker, setShowScenePicker] = useState(false);
+  // Tracks which scene is currently being unbound. Used to disable the X button
+  // so rapid-clicking cannot fire multiple concurrent unbind requests against
+  // the same scene (the backend also holds a mutation lock, but UX-wise we
+  // want the button to reflect the in-flight state).
+  const [unbindingSceneId, setUnbindingSceneId] = useState<string | null>(null);
   const dismissAddCallout = () => {
     setShowAddCallout(false);
     try {
@@ -586,12 +591,16 @@ export function ProjectDetail() {
 
   const handleUnbindScene = async (scenarioId: string) => {
     if (!id) return;
+    if (unbindingSceneId) return; // ignore reentrant clicks
+    setUnbindingSceneId(scenarioId);
     try {
       await api.unbindScenarioFromProject(id, scenarioId);
       toast.success(t("project.sceneUnbound"));
       setBoundScenes((prev) => prev.filter((s) => s.id !== scenarioId));
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, t("common.error")));
+    } finally {
+      setUnbindingSceneId(null);
     }
   };
 
@@ -822,21 +831,32 @@ export function ProjectDetail() {
         </div>
         {boundScenes.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {boundScenes.map((scene) => (
-              <div
-                key={scene.id}
-                className="inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[12px] font-medium text-secondary"
-              >
-                <Layers className="h-3 w-3 text-muted" />
-                <span>{scene.name}</span>
-                <button
-                  onClick={() => handleUnbindScene(scene.id)}
-                  className="ml-0.5 rounded-full p-0.5 text-muted hover:bg-surface-hover hover:text-secondary"
+            {boundScenes.map((scene) => {
+              const isUnbinding = unbindingSceneId === scene.id;
+              return (
+                <div
+                  key={scene.id}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[12px] font-medium text-secondary",
+                    isUnbinding && "opacity-60"
+                  )}
                 >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </div>
-            ))}
+                  <Layers className="h-3 w-3 text-muted" />
+                  <span>{scene.name}</span>
+                  <button
+                    onClick={() => handleUnbindScene(scene.id)}
+                    disabled={unbindingSceneId !== null}
+                    className="ml-0.5 rounded-full p-0.5 text-muted hover:bg-surface-hover hover:text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isUnbinding ? (
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    ) : (
+                      <X className="h-2.5 w-2.5" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="text-[12px] text-muted">{t("project.noBoundScenes")}</p>
@@ -1383,10 +1403,16 @@ export function ProjectDetail() {
         <ScenePickerDialog
           boundSceneIds={boundScenes.map((s) => s.id)}
           onBind={async (scenarioId) => {
-            await api.bindScenarioToProject(id, scenarioId);
-            const scenes = await api.getProjectScenarios(id);
-            setBoundScenes(scenes);
-            setShowScenePicker(false);
+            try {
+              await api.bindScenarioToProject(id, scenarioId);
+              const scenes = await api.getProjectScenarios(id);
+              setBoundScenes(scenes);
+              toast.success(t("project.sceneBound"));
+              // Keep the picker open so the user can bind multiple scenes in one go.
+            } catch (error: unknown) {
+              toast.error(getErrorMessage(error, t("common.error")));
+              throw error; // Let ScenePickerDialog reset its binding state via finally.
+            }
           }}
           onClose={() => setShowScenePicker(false)}
         />

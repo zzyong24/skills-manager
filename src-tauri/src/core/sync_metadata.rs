@@ -40,6 +40,8 @@ pub struct SkillMetaFile {
     pub path_key: String,
     pub enabled: bool,
     pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub source: SourceMeta,
 }
 
@@ -175,7 +177,9 @@ pub(crate) fn reindex_from_metadata_unlocked(store: &SkillStore) -> Result<()> {
         let record = SkillRecord {
             id: meta.skill_id.clone(),
             name,
-            description: parsed.description,
+            // Prefer description override stored in metadata JSON (set by user via CLI);
+            // fall back to SKILL.md frontmatter so new skills still get their description.
+            description: meta.description.clone().or(parsed.description),
             source_type: meta.source.source_type.clone(),
             source_ref,
             source_ref_resolved: previous.and_then(|s| s.source_ref_resolved.clone()),
@@ -383,6 +387,15 @@ fn write_skill_file(skill: &SkillRecord, tags: &[String]) -> Result<()> {
         "import" | "local" => None,
         _ => skill.source_ref.clone(),
     };
+
+    // Preserve existing description override from metadata if present and DB has none
+    // (avoids overwriting a user-set override when the App rewrites metadata)
+    let existing_meta = read_skill_meta_file(&skill.id);
+    let description = match &skill.description {
+        Some(_) => skill.description.clone(),
+        None => existing_meta.and_then(|m| m.description),
+    };
+
     let meta = SkillMetaFile {
         schema_version: SCHEMA_VERSION,
         skill_id: skill.id.clone(),
@@ -390,6 +403,7 @@ fn write_skill_file(skill: &SkillRecord, tags: &[String]) -> Result<()> {
         path,
         enabled: skill.enabled,
         tags,
+        description,
         source: SourceMeta {
             source_type: skill.source_type.clone(),
             ref_: source_ref,
@@ -554,6 +568,13 @@ fn path_key(path: &str) -> String {
         .map(|part| caseless::default_case_fold_str(&part.nfc().collect::<String>()))
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Read an existing skill metadata JSON file, returning None if it doesn't exist or is malformed.
+pub fn read_skill_meta_file(skill_id: &str) -> Option<SkillMetaFile> {
+    let path = metadata_dir().join("skills").join(format!("{}.json", skill_id));
+    let content = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 fn sorted_tags(tags: &[String]) -> Vec<String> {

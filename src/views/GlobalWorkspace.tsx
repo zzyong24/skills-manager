@@ -371,29 +371,29 @@ export function GlobalWorkspace() {
   if (!currentTool) {
     return (
       <div className="app-page">
-        <div className="app-page-header pr-2 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="app-page-title flex items-center gap-2.5">
-              <Globe className="h-5 w-5 text-accent" />
-              {t("globalWorkspace.title")}
-            </h1>
-            <p className="app-page-subtitle">{t("globalWorkspace.subtitle")}</p>
+        <div className="app-page-header flex flex-col gap-2.5 pb-3 pr-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="app-page-title flex items-center gap-2.5">
+                <Globe className="h-5 w-5 text-accent" />
+                {t("globalWorkspace.title")}
+                <span className="app-badge">{installedTools.length}</span>
+              </h1>
+            </div>
           </div>
-          <div />
-        </div>
 
-        {/* Preset bar — all agents scope */}
-        {scenarios.length > 0 && (
-          <PresetBar
-            presets={scenarios}
-            managedSkills={managedSkills}
-            agentKeys={presetBarAgentKeys}
-            existsInWorkspace={existsInGlobal}
-            onAddSkill={handlePresetAdd}
-            onRemoveSkill={handlePresetRemove}
-            onComplete={handlePresetComplete}
-          />
-        )}
+          {scenarios.length > 0 && (
+            <PresetBar
+              presets={scenarios}
+              managedSkills={managedSkills}
+              agentKeys={presetBarAgentKeys}
+              existsInWorkspace={existsInGlobal}
+              onAddSkill={handlePresetAdd}
+              onRemoveSkill={handlePresetRemove}
+              onComplete={handlePresetComplete}
+            />
+          )}
+        </div>
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {installedTools.map((tool) => {
@@ -423,80 +423,75 @@ export function GlobalWorkspace() {
   return (
     <div className="app-page">
       {/* Header */}
-      <div className="app-page-header pr-2 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="app-page-title flex items-center gap-2.5">
-            <Globe className="h-5 w-5 text-accent" />
-            {currentTool.display_name}
-            <span className="app-badge">{agentSkills.length}</span>
-          </h1>
-          <p className="app-page-subtitle">{t("globalWorkspace.subtitle")}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pt-1">
-          <button
-            onClick={() => setAddDialogOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t("globalWorkspace.addSkill")}
-          </button>
-        </div>
-      </div>
+      <div className="app-page-header flex flex-col gap-2.5 pb-3 pr-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-[1_1_180px]">
+            <h1 className="app-page-title flex items-center gap-2.5">
+              <Globe className="h-5 w-5 text-accent" />
+              {currentTool.display_name}
+              <span className="app-badge">{agentSkills.length}</span>
+            </h1>
+          </div>
 
-      <div className="-mb-3 flex flex-col gap-2">
-        {/* Toolbar */}
-        <div className="app-toolbar">
-          <div className="flex flex-1 gap-3">
-            <div className="relative w-full max-w-[280px]">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+          <div className="flex min-w-0 flex-[2_1_520px] flex-wrap items-center justify-end gap-2">
+            <div className="relative w-full min-w-[220px] max-w-[320px]">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t("globalWorkspace.addSkillSearch")}
-                className="app-input w-full pl-9 font-medium"
+                className="app-input h-9 w-full rounded-md pl-8 font-medium"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
               />
             </div>
-          </div>
 
-          <div className="app-segmented">
+            <div className="app-segmented shrink-0">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={cn(
+                  "rounded-md p-2 transition-colors outline-none",
+                  viewMode === "grid" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "rounded-md p-2 transition-colors outline-none",
+                  viewMode === "list" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => (isMultiSelect ? exitMultiSelect() : setIsMultiSelect(true))}
+                className={cn(
+                  "rounded-md p-2 transition-colors outline-none",
+                  isMultiSelect ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                )}
+                title={isMultiSelect ? t("globalWorkspace.cancelSelect") : t("globalWorkspace.selectMode")}
+              >
+                <SquareCheck className="h-4 w-4" />
+              </button>
+            </div>
+
             <button
-              onClick={() => setViewMode("grid")}
-              className={cn(
-                "rounded-md p-2 transition-colors outline-none",
-                viewMode === "grid" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
-              )}
+              onClick={() => setAddDialogOpen(true)}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover"
             >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "rounded-md p-2 transition-colors outline-none",
-                viewMode === "list" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
-              )}
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => (isMultiSelect ? exitMultiSelect() : setIsMultiSelect(true))}
-              className={cn(
-                "rounded-md p-2 transition-colors outline-none",
-                isMultiSelect ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
-              )}
-              title={isMultiSelect ? t("globalWorkspace.cancelSelect") : t("globalWorkspace.selectMode")}
-            >
-              <SquareCheck className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
+              {t("globalWorkspace.addSkill")}
             </button>
           </div>
         </div>
 
         {/* Tag filters */}
         {allTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 px-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[12px] text-muted">{t("mySkills.tags.filter")}</span>
             <button
               onClick={() => setTagFilters(new Set())}

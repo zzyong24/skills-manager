@@ -293,7 +293,7 @@ export function Sidebar() {
                                 <button
                                   onClick={() => handleSwitchScenario(scenario.id)}
                                   className={cn(
-                                    "flex min-w-0 flex-1 items-center gap-2 px-2.5 py-[7px] text-left text-[15px] leading-5 outline-none",
+                                    "flex min-w-0 flex-1 items-center gap-2 px-2.5 py-[7px] text-left text-sm leading-5 outline-none",
                                     isActive ? "font-medium text-primary" : "text-tertiary group-hover:text-secondary"
                                   )}
                                 >
@@ -360,7 +360,7 @@ export function Sidebar() {
               </DragDropContext>
               <button
                 onClick={() => setShowCreate(true)}
-                className="flex items-center gap-2 px-2.5 py-[7px] mt-1 rounded-[5px] text-[13px] text-muted hover:text-secondary hover:bg-surface-hover transition-colors w-full outline-none"
+                className="flex items-center gap-2 px-2.5 py-[7px] mt-1 rounded-[5px] text-sm text-muted hover:text-secondary hover:bg-surface-hover transition-colors w-full outline-none"
               >
                 <Plus className="w-3.5 h-3.5" />
                 {t("sidebar.newScenario")}
@@ -394,7 +394,7 @@ export function Sidebar() {
                   <Link
                     to="/global-workspace"
                     className={cn(
-                      "mb-0.5 flex items-center gap-2 px-2.5 py-[7px] rounded-[5px] text-[13px] transition-colors outline-none",
+                      "mb-0.5 flex items-center gap-2 px-2.5 py-[7px] rounded-[5px] text-sm transition-colors outline-none",
                       isActive
                         ? "bg-surface-active font-medium text-primary"
                         : "text-tertiary hover:text-secondary hover:bg-surface-hover"
@@ -440,7 +440,7 @@ export function Sidebar() {
                                   <button
                                     onClick={() => navigate(`/global-workspace/${tool.key}`)}
                                     className={cn(
-                                      "flex min-w-0 flex-1 items-center gap-2 px-2.5 py-[7px] text-left text-[13px] leading-5 outline-none",
+                                      "flex min-w-0 flex-1 items-center gap-2 px-2.5 py-[7px] text-left text-sm leading-5 outline-none",
                                       isActive ? "font-medium text-primary" : "text-tertiary group-hover:text-secondary"
                                     )}
                                   >
@@ -533,7 +533,7 @@ export function Sidebar() {
                                 <button
                                   onClick={() => navigate(`/project/${project.id}`)}
                                   className={cn(
-                                    "flex min-w-0 flex-1 items-center gap-2 px-2.5 py-[7px] text-left text-[15px] leading-5 outline-none",
+                                    "flex min-w-0 flex-1 items-center gap-2 px-2.5 py-[7px] text-left text-sm leading-5 outline-none",
                                     isActive ? "font-medium text-primary" : "text-tertiary group-hover:text-secondary"
                                   )}
                                 >
@@ -607,7 +607,7 @@ export function Sidebar() {
               </DragDropContext>
               <button
                 onClick={() => setShowAddProject(true)}
-                className="flex items-center gap-2 px-2.5 py-[7px] mt-1 rounded-[5px] text-[13px] text-muted hover:text-secondary hover:bg-surface-hover transition-colors w-full outline-none"
+                className="flex items-center gap-2 px-2.5 py-[7px] mt-1 rounded-[5px] text-sm text-muted hover:text-secondary hover:bg-surface-hover transition-colors w-full outline-none"
               >
                 <Plus className="w-3.5 h-3.5" />
                 {t("sidebar.addProject")}

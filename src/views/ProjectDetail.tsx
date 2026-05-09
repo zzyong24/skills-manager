@@ -796,64 +796,35 @@ export function ProjectDetail() {
 
   return (
     <div className="app-page">
-      <div className="app-page-header pr-2 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="app-page-title flex items-center gap-2.5">
-            <FolderOpen className="w-5 h-5 text-accent" />
-            {project.name}
-            <span className="app-badge">{groupedSkills.length}</span>
-          </h1>
-          <p className="app-page-subtitle">
-            {project.path}
-            {groupedSkills.length > 0 && ` \u00B7 ${enabledCount} / ${groupedSkills.length} ${t("project.enabled")}`}
-          </p>
-          <p className="mt-1 text-[13px] text-muted">
-            {project.workspace_type === "linked" ? t("project.linkedWorkspaceHint") : t("project.workspaceHint")}
-          </p>
-        </div>
-        <div className="relative flex shrink-0 items-center gap-2 pt-1">
-          <button
-            onClick={() => {
-              setShowExportDialog(true);
-              dismissAddCallout();
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t("project.addSkill")}
-          </button>
-          {showAddCallout && groupedSkills.length > 0 && (
-            <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-md border border-border bg-surface p-3 text-[12px] leading-snug shadow-lg">
-              <button
-                onClick={dismissAddCallout}
-                className="absolute right-1.5 top-1.5 rounded p-0.5 text-faint hover:text-secondary"
-                aria-label={t("common.close")}
-              >
-                <X className="h-3 w-3" />
-              </button>
-              <p className="pr-4 text-secondary">{t("project.addCallout")}</p>
-            </div>
-          )}
-        </div>
-      </div>
+      <div className="app-page-header flex flex-col gap-2.5 pb-3 pr-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-[1_1_260px]">
+            <h1 className="app-page-title flex items-center gap-2.5">
+              <FolderOpen className="h-5 w-5 text-accent" />
+              {project.name}
+              <span className="app-badge">{groupedSkills.length}</span>
+            </h1>
+            <p className="mt-1 truncate text-[12px] leading-5 text-muted" title={project.path}>
+              {project.path}
+              {groupedSkills.length > 0 && ` \u00B7 ${enabledCount} / ${groupedSkills.length} ${t("project.enabled")}`}
+            </p>
+          </div>
 
-      <div className="-mb-3 flex flex-col gap-2">
-        <div className="app-toolbar">
-          <div className="flex flex-1 gap-3">
-            <div className="relative w-full max-w-[280px]">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+          <div className="flex min-w-0 flex-[2_1_560px] flex-wrap items-center justify-end gap-2">
+            <div className="relative w-full min-w-[220px] max-w-[300px]">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t("project.searchPlaceholder")}
-                className="app-input w-full pl-9 font-medium"
+                className="app-input h-9 w-full rounded-md pl-8 font-medium"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
               />
             </div>
-            <div className="app-segmented">
+            <div className="app-segmented shrink-0">
               {(["all", "enabled", "disabled"] as const).map((mode) => (
                 <button
                   key={mode}
@@ -867,49 +838,74 @@ export function ProjectDetail() {
                 </button>
               ))}
             </div>
-          </div>
 
-          <div className="app-segmented">
-            <button
-              onClick={loadSkills}
-              className="mr-2 inline-flex items-center gap-1 rounded-md px-3 py-2 text-[13px] font-medium text-muted transition-colors hover:bg-surface-hover hover:text-secondary"
-              title={t("common.refresh")}
-            >
-              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            </button>
-            <button
-              onClick={() => setViewMode("grid")}
-              className={cn(
-                "rounded-md p-2 transition-colors outline-none",
-                viewMode === "grid" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+            <div className="app-segmented shrink-0">
+              <button
+                onClick={loadSkills}
+                className="rounded-md p-2 text-muted transition-colors outline-none hover:bg-surface-hover hover:text-secondary"
+                title={t("common.refresh")}
+              >
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+              </button>
+              <button
+                onClick={() => setViewMode("grid")}
+                className={cn(
+                  "rounded-md p-2 transition-colors outline-none",
+                  viewMode === "grid" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "rounded-md p-2 transition-colors outline-none",
+                  viewMode === "list" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => isMultiSelect ? exitMultiSelect() : setIsMultiSelect(true)}
+                className={cn(
+                  "rounded-md p-2 transition-colors outline-none",
+                  isMultiSelect ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
+                )}
+                title={isMultiSelect ? t("project.cancelSelect") : t("project.selectMode")}
+              >
+                <SquareCheck className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative shrink-0">
+              <button
+                onClick={() => {
+                  setShowExportDialog(true);
+                  dismissAddCallout();
+                }}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t("project.addSkill")}
+              </button>
+              {showAddCallout && groupedSkills.length > 0 && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-md border border-border bg-surface p-3 text-[12px] leading-snug shadow-lg">
+                  <button
+                    onClick={dismissAddCallout}
+                    className="absolute right-1.5 top-1.5 rounded p-0.5 text-faint hover:text-secondary"
+                    aria-label={t("common.close")}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                  <p className="pr-4 text-secondary">{t("project.addCallout")}</p>
+                </div>
               )}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "rounded-md p-2 transition-colors outline-none",
-                viewMode === "list" ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
-              )}
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => isMultiSelect ? exitMultiSelect() : setIsMultiSelect(true)}
-              className={cn(
-                "rounded-md p-2 transition-colors outline-none",
-                isMultiSelect ? "bg-surface-active text-secondary" : "text-muted hover:text-tertiary"
-              )}
-              title={isMultiSelect ? t("project.cancelSelect") : t("project.selectMode")}
-            >
-              <SquareCheck className="h-4 w-4" />
-            </button>
+            </div>
           </div>
         </div>
 
         {allTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 px-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[12px] text-muted">{t("mySkills.tags.filter")}</span>
             <button
               onClick={() => setTagFilters(new Set())}

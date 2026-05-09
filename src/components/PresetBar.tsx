@@ -100,9 +100,9 @@ export function PresetBar({
   const busy = loadingKey !== null;
 
   return (
-    <div className="flex items-center gap-1 px-1">
-      <span className="shrink-0 text-[12px] text-muted">Preset</span>
-      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className="shrink-0 text-[12px] text-muted">{t("sidebar.scenarios")}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-hide">
         {visiblePresets.map((preset) => {
           const s = statuses.get(preset.id)!;
           const scenarioIcon = getScenarioIconOption(preset);

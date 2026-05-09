@@ -49,6 +49,40 @@ impl RepoLock {
 
         Ok(Self { file })
     }
+
+    /// Try to acquire an exclusive lock. Returns Ok(None) if the repository
+    /// is currently held by another process (e.g. the GUI app).
+    pub fn try_acquire(operation: &str) -> Result<Option<Self>> {
+        let base = central_repo::base_dir();
+        std::fs::create_dir_all(&base)?;
+        let lock_path = base.join(LOCK_FILE_NAME);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .with_context(|| format!("failed to open repo lock {}", lock_path.display()))?;
+
+        if file.try_lock_exclusive().is_err() {
+            return Ok(None);
+        }
+
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+        writeln!(
+            file,
+            "pid={}\nhostname={}\noperation={}\nstart_time={}",
+            std::process::id(),
+            std::env::var("HOSTNAME")
+                .or_else(|_| std::env::var("COMPUTERNAME"))
+                .unwrap_or_else(|_| "unknown".to_string()),
+            operation,
+            chrono::Utc::now().to_rfc3339()
+        )?;
+        file.sync_all()?;
+
+        Ok(Some(Self { file }))
+    }
 }
 
 impl Drop for RepoLock {

@@ -13,7 +13,7 @@ pub fn initialize_store() -> Result<Arc<SkillStore>> {
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("Failed to migrate legacy tool keys")?;
     if sync_metadata::metadata_exists() {
-        sync_metadata::reindex_from_metadata(&store)
+        sync_metadata::try_reindex_from_metadata(&store)
             .context("Failed to reindex from sync metadata")?;
     }
     scenario_service::ensure_default_startup_scenario(&store)

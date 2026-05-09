@@ -92,6 +92,21 @@ where
     f()
 }
 
+/// Try to reindex from metadata snapshot. Returns Ok(None) if the
+/// repository lock is held by another process (e.g. the GUI app).
+pub fn try_reindex_from_metadata(store: &SkillStore) -> Result<Option<()>> {
+    if !metadata_exists() {
+        return Ok(Some(()));
+    }
+    match RepoLock::try_acquire("reindex sync metadata")? {
+        Some(_lock) => {
+            reindex_from_metadata_unlocked(store)?;
+            Ok(Some(()))
+        }
+        None => Ok(None),
+    }
+}
+
 pub(crate) fn write_all_from_db_unlocked(store: &SkillStore) -> Result<()> {
     ensure_metadata_dirs()?;
     write_schema()?;

@@ -243,7 +243,21 @@ fn run() -> anyhow::Result<()> {
             SkillsCommand::SetDescription { reference, description } => {
                 let mut skill = resolve_skill(&store, &reference)?;
                 let name = skill.name.clone();
-                skill.description = if description.is_empty() { None } else { Some(description.clone()) };
+                let new_desc = if description.is_empty() { None } else { Some(description.clone()) };
+
+                // Update SKILL.md frontmatter so description survives reindex
+                let skill_dir = PathBuf::from(&skill.central_path);
+                let skill_md_path = [skill_dir.join("SKILL.md"), skill_dir.join("skill.md")]
+                    .into_iter()
+                    .find(|p| p.is_file());
+                if let Some(path) = skill_md_path {
+                    let content = std::fs::read_to_string(&path)?;
+                    let updated = update_frontmatter_description(&content, new_desc.as_deref());
+                    std::fs::write(&path, updated)?;
+                }
+
+                // Also update DB
+                skill.description = new_desc.clone();
                 store.upsert_skill(&skill)?;
                 print_json(&serde_json::json!({"ok": true, "skill": name, "description": description}), cli.json)
             }
@@ -441,6 +455,51 @@ fn list_scenarios(store: &app_lib::core::skill_store::SkillStore) -> anyhow::Res
 fn current_scenario(store: &app_lib::core::skill_store::SkillStore) -> anyhow::Result<Option<ScenarioInfo>> {
     let scenarios = list_scenarios(store)?;
     Ok(scenarios.into_iter().find(|scenario| scenario.active))
+}
+
+/// Update or insert the `description` field in a SKILL.md frontmatter block.
+fn update_frontmatter_description(content: &str, description: Option<&str>) -> String {
+    let trimmed = content.trim_start();
+
+    if !trimmed.starts_with("---") {
+        return match description {
+            Some(desc) => format!("---\ndescription: \"{}\"\n---\n\n{}", escape_yaml(desc), content),
+            None => content.to_string(),
+        };
+    }
+
+    let rest = &trimmed[3..];
+    let Some(end_offset) = rest.find("\n---") else {
+        return content.to_string();
+    };
+
+    let yaml_block = &rest[..end_offset];
+    let after_frontmatter = &rest[end_offset + 4..];
+
+    // Keep all lines except existing description (also drop blank lines to avoid accumulation)
+    let mut new_lines: Vec<String> = yaml_block
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            !t.is_empty() && !t.starts_with("description:")
+        })
+        .map(|l| l.to_string())
+        .collect();
+
+    if let Some(desc) = description {
+        new_lines.push(format!("description: \"{}\"", escape_yaml(desc)));
+    }
+
+    let prefix = &content[..content.len() - trimmed.len()];
+    if new_lines.is_empty() {
+        format!("{}---\n---{}", prefix, after_frontmatter)
+    } else {
+        format!("{}---\n{}\n---{}", prefix, new_lines.join("\n"), after_frontmatter)
+    }
+}
+
+fn escape_yaml(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn resolve_scenario(

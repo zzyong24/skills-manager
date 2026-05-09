@@ -47,9 +47,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/skills-manager-cli"
-    ],
     "macOS": {
       "minimumSystemVersion": "10.15"
     }

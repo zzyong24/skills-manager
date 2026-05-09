@@ -75,16 +75,6 @@ jobs:
             --bin skills-manager-cli \
             --target ${{ matrix.target }}
 
-          # Tauri externalBin 约定：src-tauri/binaries/<name>-<target-triple>[.exe]
-          mkdir -p src-tauri/binaries
-          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-            cp "src-tauri/target/${{ matrix.target }}/release/skills-manager-cli.exe" \
-               "src-tauri/binaries/skills-manager-cli-${{ matrix.target }}.exe"
-          else
-            cp "src-tauri/target/${{ matrix.target }}/release/skills-manager-cli" \
-               "src-tauri/binaries/skills-manager-cli-${{ matrix.target }}"
-          fi
-
       - name: Upload CLI binary as release asset
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -93,10 +83,10 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-            ASSET="src-tauri/binaries/skills-manager-cli-${{ matrix.target }}.exe"
+            ASSET="src-tauri/target/${{ matrix.target }}/release/skills-manager-cli.exe"
             ASSET_NAME="skills-manager-cli-${{ matrix.label }}.exe"
           else
-            ASSET="src-tauri/binaries/skills-manager-cli-${{ matrix.target }}"
+            ASSET="src-tauri/target/${{ matrix.target }}/release/skills-manager-cli"
             ASSET_NAME="skills-manager-cli-${{ matrix.label }}"
           fi
           gh release upload "v${VERSION}" "${ASSET}#${ASSET_NAME}" --clobber

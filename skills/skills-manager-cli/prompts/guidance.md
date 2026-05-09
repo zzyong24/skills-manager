@@ -5,21 +5,12 @@
 Check in priority order — use the first one found:
 
 ```bash
-# 1. Bundled with the App (recommended — no extra install needed)
-#    macOS
-/Applications/skills-manager.app/Contents/MacOS/skills-manager-cli
-#    Windows
-%LOCALAPPDATA%\skills-manager\skills-manager-cli.exe
-#    Linux
-~/.local/bin/skills-manager-cli
-
-# 2. Installed via cargo
-~/.cargo/bin/skills-manager-cli
-
-# 3. Manually downloaded from GitHub Releases and placed on PATH
+# 1. Manually downloaded from GitHub Releases and placed on PATH
+#    https://github.com/xingkongliang/skills-manager/releases
 skills-manager-cli
 
-# 4. Built from source (developers only)
+# 2. Installed via cargo (developers with Rust toolchain)
+~/.cargo/bin/skills-manager-cli
 # Run: npm run cli:install  (inside the skills-manager repo)
 # or:  cargo install --path src-tauri --bin skills-manager-cli
 ```
@@ -29,7 +20,7 @@ Detection script (macOS / Linux / Git Bash on Windows):
 ```bash
 find_cli() {
   for candidate in \
-    "/Applications/skills-manager.app/Contents/MacOS/skills-manager-cli" \
+    "$(which skills-manager-cli 2>/dev/null)" \
     "$HOME/.local/bin/skills-manager-cli" \
     "/usr/local/bin/skills-manager-cli" \
     "$HOME/.cargo/bin/skills-manager-cli" \

@@ -98,6 +98,17 @@ tools:
       - name: ref
         type: string
         required: true
+  - name: sm_set_description
+    description: Update the description of a skill (empty string clears it)
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Skill name, id, or folder name
+      - name: description
+        type: string
+        required: true
+        description: New description text, or empty string to clear
   - name: sm_list_presets
     description: List all presets and which is currently active
     params: []

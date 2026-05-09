@@ -86,6 +86,7 @@ $CLI --json skills export <ref> --dest <path>    # export skill to directory
 $CLI --json skills tag <ref> "tag1,tag2"         # append tags (comma-separated, deduped)
 $CLI --json skills untag <ref> <tag>             # remove one tag
 $CLI --json skills set-tags <ref> "tag1,tag2"    # replace all tags (empty = clear all)
+$CLI --json skills set-description <ref> "text"  # update description (empty = clear)
 $CLI --json skills enable <ref>                  # enable a skill
 $CLI --json skills disable <ref>                 # disable a skill
 ```

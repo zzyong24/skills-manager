@@ -73,6 +73,8 @@ enum SkillsCommand {
     Enable { reference: String },
     /// Disable a skill
     Disable { reference: String },
+    /// Update the description of a skill
+    SetDescription { reference: String, description: String },
 }
 
 #[derive(Args, Debug)]
@@ -237,6 +239,13 @@ fn run() -> anyhow::Result<()> {
                 skill.enabled = false;
                 store.upsert_skill(&skill)?;
                 print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": false}), cli.json)
+            }
+            SkillsCommand::SetDescription { reference, description } => {
+                let mut skill = resolve_skill(&store, &reference)?;
+                let name = skill.name.clone();
+                skill.description = if description.is_empty() { None } else { Some(description.clone()) };
+                store.upsert_skill(&skill)?;
+                print_json(&serde_json::json!({"ok": true, "skill": name, "description": description}), cli.json)
             }
         },
         Commands::Scenarios(args) => match args.command {

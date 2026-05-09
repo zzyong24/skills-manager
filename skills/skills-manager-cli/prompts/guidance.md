@@ -53,7 +53,7 @@ The CLI and App share the same SQLite DB (path shown in `repo status → db_path
 default `~/.skills-manager/skills-manager.db`).
 
 - **Read** (`list`, `show`, `repo status`, `git status`): safe while App is open.
-- **Write** (`tag`, `untag`, `enable`, `disable`, `scenarios add-skill`, etc.): **close the App first**.
+- **Write** (`tag`, `untag`, `enable`, `disable`, `presets add-skill`, etc.): **close the App first**.
 
 ---
 
@@ -64,7 +64,7 @@ Use `--skills-root <path>` as a global flag to point at a non-default skills dir
 
 ### repo
 ```bash
-$CLI --json repo status          # path, skill count, scenario count
+$CLI --json repo status          # path, skill count, preset count
 $CLI repo set-path <path>        # change skills root directory
 $CLI repo reset-path             # restore default (~/.skills-manager)
 ```
@@ -76,7 +76,7 @@ $CLI --json tools list           # list all detected agent tools with install st
 
 ### skills — read
 ```bash
-$CLI --json skills list                          # all skills with tags/enabled/scenarios
+$CLI --json skills list                          # all skills with tags/enabled/presets
 $CLI --json skills show <ref>                    # detail + full SKILL.md content
 $CLI --json skills export <ref> --dest <path>    # export skill to directory
 ```
@@ -92,14 +92,14 @@ $CLI --json skills disable <ref>                 # disable a skill
 
 `<ref>` accepts: skill name, id, or folder name.
 
-### scenarios
+### presets
 ```bash
-$CLI --json scenarios list                            # list all scenarios
-$CLI --json scenarios current                         # active scenario
-$CLI --json scenarios preview <ref>                   # preview what will be synced
-$CLI --json scenarios apply <ref>                     # switch and apply to all agents
-$CLI --json scenarios add-skill <scenario> <skill>    # add skill to scenario (close App first)
-$CLI --json scenarios remove-skill <scenario> <skill> # remove skill from scenario
+$CLI --json presets list                            # list all presets
+$CLI --json presets current                         # active preset
+$CLI --json presets preview <ref>                   # preview what will be synced
+$CLI --json presets apply <ref>                     # switch and apply to all agents
+$CLI --json presets add-skill <preset> <skill>    # add skill to preset (close App first)
+$CLI --json presets remove-skill <preset> <skill> # remove skill from preset
 ```
 
 ### git
@@ -123,4 +123,4 @@ For step-by-step guides, read the relevant reference before acting:
 | Task | Reference |
 |------|-----------|
 | Auto-tag all skills by category | `references/tagging-workflow.md` |
-| Manage scenario membership | `references/scenarios-workflow.md` |
+| Manage preset membership | `references/presets-workflow.md` |

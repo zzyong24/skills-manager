@@ -23,6 +23,7 @@ enum Commands {
     Repo(RepoArgs),
     Tools(ToolsArgs),
     Skills(SkillsArgs),
+    #[command(name = "presets")]
     Scenarios(ScenarioArgs),
     Git(GitArgs),
 }
@@ -86,9 +87,9 @@ enum ScenarioCommand {
     Current,
     Preview { reference: String },
     Apply { reference: String },
-    /// Add a skill to a scenario
+    /// Add a skill to a preset
     AddSkill { scenario: String, skill: String },
-    /// Remove a skill from a scenario
+    /// Remove a skill from a preset
     RemoveSkill { scenario: String, skill: String },
 }
 
@@ -262,13 +263,13 @@ fn run() -> anyhow::Result<()> {
                     .map(|t| t.key)
                     .collect();
                 store.ensure_scenario_skill_tool_defaults(&scenario.id, &skill.id, &tool_keys)?;
-                print_json(&serde_json::json!({"ok": true, "scenario": scenario.name, "skill": skill.name}), cli.json)
+                print_json(&serde_json::json!({"ok": true, "preset": scenario.name, "skill": skill.name}), cli.json)
             }
             ScenarioCommand::RemoveSkill { scenario, skill } => {
                 let scenario = resolve_scenario(&store, &scenario)?;
                 let skill = resolve_skill(&store, &skill)?;
                 store.remove_skill_from_scenario(&scenario.id, &skill.id)?;
-                print_json(&serde_json::json!({"ok": true, "scenario": scenario.name, "skill": skill.name}), cli.json)
+                print_json(&serde_json::json!({"ok": true, "preset": scenario.name, "skill": skill.name}), cli.json)
             }
         },
         Commands::Git(args) => match args.command {

@@ -1,11 +1,11 @@
 id: skills-manager-cli
 name: Skills Manager CLI
-description: "Read and write Skills Manager data via CLI: list/tag/enable skills, manage scenarios, Git backup"
+description: "Read and write Skills Manager data via CLI: list/tag/enable skills, manage presets, Git backup"
 icon: "🛠️"
 category: infrastructure
 tools:
   - name: sm_repo_status
-    description: Show skills repo status (path, skill count, scenario count)
+    description: Show skills repo status (path, skill count, preset count)
     params: []
   - name: sm_repo_set_path
     description: Change the skills root directory
@@ -21,7 +21,7 @@ tools:
     description: List all detected agent tools (Claude Code, Cursor, etc.) with install status
     params: []
   - name: sm_list_skills
-    description: List all skills with tags, enabled status, and scenario membership
+    description: List all skills with tags, enabled status, and preset membership
     params:
       - name: tag
         type: string
@@ -98,39 +98,39 @@ tools:
       - name: ref
         type: string
         required: true
-  - name: sm_list_scenarios
-    description: List all scenarios and which is currently active
+  - name: sm_list_presets
+    description: List all presets and which is currently active
     params: []
-  - name: sm_current_scenario
-    description: Show the currently active scenario
+  - name: sm_current_preset
+    description: Show the currently active preset
     params: []
-  - name: sm_preview_scenario
-    description: Preview which files a scenario would sync before applying
+  - name: sm_preview_preset
+    description: Preview which files a preset would sync before applying
     params:
       - name: ref
         type: string
         required: true
-        description: Scenario name or id
-  - name: sm_apply_scenario
-    description: Switch to a scenario and apply it to all agents
+        description: Preset name or id
+  - name: sm_apply_preset
+    description: Switch to a preset and apply it to all agents
     params:
       - name: ref
         type: string
         required: true
-        description: Scenario name or id
-  - name: sm_scenario_add_skill
-    description: Add a skill to a scenario (close App first)
+        description: Preset name or id
+  - name: sm_preset_add_skill
+    description: Add a skill to a preset (close App first)
     params:
-      - name: scenario
+      - name: preset
         type: string
         required: true
       - name: skill
         type: string
         required: true
-  - name: sm_scenario_remove_skill
-    description: Remove a skill from a scenario (close App first)
+  - name: sm_preset_remove_skill
+    description: Remove a skill from a preset (close App first)
     params:
-      - name: scenario
+      - name: preset
         type: string
         required: true
       - name: skill
@@ -158,6 +158,6 @@ triggers:
   - "skill tags"
   - "auto-tag"
   - "manage skills"
-  - "switch scenario"
+  - "switch preset"
   - "backup skills"
 dependencies: []

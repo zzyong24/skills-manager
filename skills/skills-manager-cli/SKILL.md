@@ -1,17 +1,17 @@
 ---
 name: skills-manager-cli
-description: Use skills-manager-cli to let agents read and write Skills Manager data — tag skills, manage scenarios, and sync backups without opening the GUI.
+description: Use skills-manager-cli to let agents read and write Skills Manager data — tag skills, manage presets, and sync backups without opening the GUI.
 ---
 
 # Skills Manager CLI Skill
 
-Use `skills-manager-cli` to let agents read and write Skills Manager data directly — tag skills, manage scenarios, and sync backups without opening the GUI.
+Use `skills-manager-cli` to let agents read and write Skills Manager data directly — tag skills, manage presets, and sync backups without opening the GUI.
 
 ## What it can do
 
 | Operation | Method |
 |-----------|--------|
-| List all skills (tags / enabled / scenario membership) | `skills list --json` |
+| List all skills (tags / enabled / preset membership) | `skills list --json` |
 | View skill detail + SKILL.md content | `skills show` |
 | Add / remove / replace tags on a skill | `skills tag` / `untag` / `set-tags` |
 | Enable or disable a skill | `skills enable` / `disable` |
@@ -26,8 +26,8 @@ Use `skills-manager-cli` to let agents read and write Skills Manager data direct
 "Auto-tag all my skills by category"
 → sm_list_skills → analyze name+description → sm_batch_tag
 
-"Switch to the dev scenario"
-→ sm_apply_scenario "dev"
+"Switch to the dev preset"
+→ sm_apply_preset "dev"
 
 "Back up current skill state"
 → sm_git_sync "chore: snapshot"

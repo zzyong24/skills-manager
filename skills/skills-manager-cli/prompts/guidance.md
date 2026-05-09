@@ -43,6 +43,8 @@ find_cli() {
 CLI=$(find_cli) || exit 1
 ```
 
+> **npm install coming soon** — a global `npm install -g @skills-manager/cli` option is planned for CI/CD environments.
+
 ---
 
 ## Important: write operations require the App to be closed
@@ -50,12 +52,12 @@ CLI=$(find_cli) || exit 1
 The CLI and App share the same SQLite DB (path shown in `repo status → db_path`,
 default `~/.skills-manager/skills-manager.db`).
 
-- **Read operations** (`list`, `show`, `repo status`, `git status`): safe while App is open.
-- **Write operations** (`tag`, `untag`, `enable`, `disable`, `scenarios add-skill`, etc.): **close the App first** — concurrent writes from the App will overwrite CLI changes.
+- **Read** (`list`, `show`, `repo status`, `git status`): safe while App is open.
+- **Write** (`tag`, `untag`, `enable`, `disable`, `scenarios add-skill`, etc.): **close the App first**.
 
 ---
 
-## Full command reference
+## Command reference
 
 Add `--json` to any command for machine-readable output.
 Use `--skills-root <path>` as a global flag to point at a non-default skills directory.
@@ -74,18 +76,18 @@ $CLI --json tools list           # list all detected agent tools with install st
 
 ### skills — read
 ```bash
-$CLI --json skills list                             # all skills with tags/enabled/scenarios
-$CLI --json skills show <ref>                       # detail + full SKILL.md content
-$CLI --json skills export <ref> --dest <path>       # export skill to directory
+$CLI --json skills list                          # all skills with tags/enabled/scenarios
+$CLI --json skills show <ref>                    # detail + full SKILL.md content
+$CLI --json skills export <ref> --dest <path>    # export skill to directory
 ```
 
 ### skills — write (close App first)
 ```bash
-$CLI --json skills tag <ref> "tag1,tag2"            # append tags (comma-separated, deduped)
-$CLI --json skills untag <ref> <tag>                # remove one tag
-$CLI --json skills set-tags <ref> "tag1,tag2"       # replace all tags (empty = clear all)
-$CLI --json skills enable <ref>                     # enable a skill
-$CLI --json skills disable <ref>                    # disable a skill
+$CLI --json skills tag <ref> "tag1,tag2"         # append tags (comma-separated, deduped)
+$CLI --json skills untag <ref> <tag>             # remove one tag
+$CLI --json skills set-tags <ref> "tag1,tag2"    # replace all tags (empty = clear all)
+$CLI --json skills enable <ref>                  # enable a skill
+$CLI --json skills disable <ref>                 # disable a skill
 ```
 
 `<ref>` accepts: skill name, id, or folder name.
@@ -94,7 +96,7 @@ $CLI --json skills disable <ref>                    # disable a skill
 ```bash
 $CLI --json scenarios list                            # list all scenarios
 $CLI --json scenarios current                         # active scenario
-$CLI --json scenarios preview <ref>                   # preview what will be synced before applying
+$CLI --json scenarios preview <ref>                   # preview what will be synced
 $CLI --json scenarios apply <ref>                     # switch and apply to all agents
 $CLI --json scenarios add-skill <scenario> <skill>    # add skill to scenario (close App first)
 $CLI --json scenarios remove-skill <scenario> <skill> # remove skill from scenario
@@ -104,41 +106,21 @@ $CLI --json scenarios remove-skill <scenario> <skill> # remove skill from scenar
 ```bash
 $CLI --json git status             # backup status (remote, branch, health)
 $CLI git init                      # init git repo in skills directory
-$CLI git clone <url>               # clone remote into skills directory (first-time setup)
+$CLI git clone <url>               # clone remote (first-time setup)
 $CLI git set-remote <url>          # set remote URL
-$CLI git pull                      # pull latest from remote
-$CLI git push                      # push to remote
-$CLI git commit -m "message"       # commit all changes + create snapshot tag
-$CLI --json git versions           # list all snapshot versions
-$CLI git restore <tag>             # restore a snapshot version
-```
-
-### tools
-```bash
-$CLI --json tools list    # list all detected agent tools (Claude Code, Cursor, etc.)
+$CLI git pull / push               # sync with remote
+$CLI git commit -m "message"       # commit + create snapshot tag
+$CLI --json git versions           # list snapshot versions
+$CLI git restore <tag>             # restore a snapshot
 ```
 
 ---
 
-## Typical workflow: auto-tag all skills by category
+## Detailed workflows
 
-```
-1. sm_list_skills      → get all skills with name + description
-2. analyze each skill  → decide category tags
-3. sm_batch_tag        → close App, bulk-write tags
-4. sm_list_skills      → verify results
-5. sm_git_sync         → commit and push to remote
-```
+For step-by-step guides, read the relevant reference before acting:
 
-## Suggested tag categories
-
-| Tag | Use for |
-|-----|---------|
-| `writing` | articles, copywriting, scripts, presentations |
-| `dev` | coding, debugging, architecture, CI |
-| `research` | information gathering, analysis, competitive research |
-| `data` | data processing, visualization, scraping |
-| `media` | video, image, audio |
-| `infrastructure` | system maintenance, config, backup |
-| `productivity` | efficiency tools, task management |
-| `ai` | AI models, prompt engineering |
+| Task | Reference |
+|------|-----------|
+| Auto-tag all skills by category | `references/tagging-workflow.md` |
+| Manage scenario membership | `references/scenarios-workflow.md` |

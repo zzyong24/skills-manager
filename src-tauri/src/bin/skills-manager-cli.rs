@@ -207,6 +207,7 @@ fn run() -> anyhow::Result<()> {
                     if !existing.contains(tag) { existing.push(tag.clone()); }
                 }
                 store.set_tags_for_skill(&skill.id, &existing)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
                 print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": existing}), cli.json)
             }
             SkillsCommand::Untag { reference, tag } => {
@@ -214,6 +215,7 @@ fn run() -> anyhow::Result<()> {
                 let mut existing = store.get_tags_map()?.remove(&skill.id).unwrap_or_default();
                 existing.retain(|t| t != &tag);
                 store.set_tags_for_skill(&skill.id, &existing)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
                 print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": existing}), cli.json)
             }
             SkillsCommand::SetTags { reference, tags } => {
@@ -224,6 +226,7 @@ fn run() -> anyhow::Result<()> {
                     .filter(|t| !t.is_empty() && seen.insert(t.clone()))
                     .collect();
                 store.set_tags_for_skill(&skill.id, &new_tags)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
                 print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": new_tags}), cli.json)
             }
             SkillsCommand::Enable { reference } => {
@@ -231,6 +234,7 @@ fn run() -> anyhow::Result<()> {
                 let name = skill.name.clone();
                 skill.enabled = true;
                 store.upsert_skill(&skill)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
                 print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": true}), cli.json)
             }
             SkillsCommand::Disable { reference } => {
@@ -238,6 +242,7 @@ fn run() -> anyhow::Result<()> {
                 let name = skill.name.clone();
                 skill.enabled = false;
                 store.upsert_skill(&skill)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
                 print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": false}), cli.json)
             }
             SkillsCommand::SetDescription { reference, description } => {
@@ -245,17 +250,23 @@ fn run() -> anyhow::Result<()> {
                 let name = skill.name.clone();
                 let new_desc = if description.is_empty() { None } else { Some(description.clone()) };
 
-                // Write description override into metadata JSON (same layer as tags/enabled).
-                // SKILL.md is never modified — reindex will prefer metadata.description
-                // over the frontmatter value, so the override survives updates.
-                let tags = store.get_tags_map()?.remove(&skill.id).unwrap_or_default();
-                skill.description = new_desc.clone();
-                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
-                // Re-write the metadata file with updated description via write_skill_file path
+                // For the clear case: patch metadata JSON before updating DB,
+                // so write_skill_file's preservation logic sees no old value to restore.
+                if new_desc.is_none() {
+                    let meta_path = sync_metadata::metadata_dir()
+                        .join("skills")
+                        .join(format!("{}.json", skill.id));
+                    if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                        if let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&content) {
+                            meta.as_object_mut().map(|o| o.remove("description"));
+                            let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?);
+                        }
+                    }
+                }
+
+                skill.description = new_desc;
                 store.upsert_skill(&skill)?;
-                // Trigger metadata re-sync so the JSON file reflects new description
                 sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
-                let _ = tags; // tags already in DB, ensure_skill_metadata reads from there
                 print_json(&serde_json::json!({"ok": true, "skill": name, "description": description}), cli.json)
             }
         },
@@ -283,12 +294,14 @@ fn run() -> anyhow::Result<()> {
                     .map(|t| t.key)
                     .collect();
                 store.ensure_scenario_skill_tool_defaults(&scenario.id, &skill.id, &tool_keys)?;
+                sync_metadata::ensure_scenario_metadata(&store, &scenario.id)?;
                 print_json(&serde_json::json!({"ok": true, "preset": scenario.name, "skill": skill.name}), cli.json)
             }
             ScenarioCommand::RemoveSkill { scenario, skill } => {
                 let scenario = resolve_scenario(&store, &scenario)?;
                 let skill = resolve_skill(&store, &skill)?;
                 store.remove_skill_from_scenario(&scenario.id, &skill.id)?;
+                sync_metadata::ensure_scenario_metadata(&store, &scenario.id)?;
                 print_json(&serde_json::json!({"ok": true, "preset": scenario.name, "skill": skill.name}), cli.json)
             }
         },

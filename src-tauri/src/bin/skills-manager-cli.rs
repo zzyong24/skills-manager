@@ -62,6 +62,16 @@ enum SkillsCommand {
     List,
     Show { reference: String },
     Export { reference: String, #[arg(long)] dest: PathBuf },
+    /// Add one or more tags to a skill (comma-separated)
+    Tag { reference: String, tags: String },
+    /// Remove a tag from a skill
+    Untag { reference: String, tag: String },
+    /// Replace all tags for a skill
+    SetTags { reference: String, tags: String },
+    /// Enable a skill
+    Enable { reference: String },
+    /// Disable a skill
+    Disable { reference: String },
 }
 
 #[derive(Args, Debug)]
@@ -76,6 +86,10 @@ enum ScenarioCommand {
     Current,
     Preview { reference: String },
     Apply { reference: String },
+    /// Add a skill to a scenario
+    AddSkill { scenario: String, skill: String },
+    /// Remove a skill from a scenario
+    RemoveSkill { scenario: String, skill: String },
 }
 
 #[derive(Args, Debug)]
@@ -182,6 +196,47 @@ fn run() -> anyhow::Result<()> {
                 let result = export_skill(&store, &reference, &dest)?;
                 print_json(&serde_json::json!({"ok": true, "destination": result}), cli.json)
             }
+            SkillsCommand::Tag { reference, tags } => {
+                let skill = resolve_skill(&store, &reference)?;
+                let new_tags: Vec<String> = tags.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+                let mut existing = store.get_tags_map()?.remove(&skill.id).unwrap_or_default();
+                for tag in &new_tags {
+                    if !existing.contains(tag) { existing.push(tag.clone()); }
+                }
+                store.set_tags_for_skill(&skill.id, &existing)?;
+                print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": existing}), cli.json)
+            }
+            SkillsCommand::Untag { reference, tag } => {
+                let skill = resolve_skill(&store, &reference)?;
+                let mut existing = store.get_tags_map()?.remove(&skill.id).unwrap_or_default();
+                existing.retain(|t| t != &tag);
+                store.set_tags_for_skill(&skill.id, &existing)?;
+                print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": existing}), cli.json)
+            }
+            SkillsCommand::SetTags { reference, tags } => {
+                let skill = resolve_skill(&store, &reference)?;
+                let mut seen = std::collections::HashSet::new();
+                let new_tags: Vec<String> = tags.split(',')
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+                    .collect();
+                store.set_tags_for_skill(&skill.id, &new_tags)?;
+                print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": new_tags}), cli.json)
+            }
+            SkillsCommand::Enable { reference } => {
+                let mut skill = resolve_skill(&store, &reference)?;
+                let name = skill.name.clone();
+                skill.enabled = true;
+                store.upsert_skill(&skill)?;
+                print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": true}), cli.json)
+            }
+            SkillsCommand::Disable { reference } => {
+                let mut skill = resolve_skill(&store, &reference)?;
+                let name = skill.name.clone();
+                skill.enabled = false;
+                store.upsert_skill(&skill)?;
+                print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": false}), cli.json)
+            }
         },
         Commands::Scenarios(args) => match args.command {
             ScenarioCommand::List => print_json(&list_scenarios(&store)?, cli.json),
@@ -197,6 +252,23 @@ fn run() -> anyhow::Result<()> {
                 scenario_service::apply_scenario_to_default(&store, &scenario.id)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                 print_json(&current_scenario(&store)?, cli.json)
+            }
+            ScenarioCommand::AddSkill { scenario, skill } => {
+                let scenario = resolve_scenario(&store, &scenario)?;
+                let skill = resolve_skill(&store, &skill)?;
+                store.add_skill_to_scenario(&scenario.id, &skill.id)?;
+                let tool_keys: Vec<String> = tool_service::list_tool_info(&store)
+                    .into_iter()
+                    .map(|t| t.key)
+                    .collect();
+                store.ensure_scenario_skill_tool_defaults(&scenario.id, &skill.id, &tool_keys)?;
+                print_json(&serde_json::json!({"ok": true, "scenario": scenario.name, "skill": skill.name}), cli.json)
+            }
+            ScenarioCommand::RemoveSkill { scenario, skill } => {
+                let scenario = resolve_scenario(&store, &scenario)?;
+                let skill = resolve_skill(&store, &skill)?;
+                store.remove_skill_from_scenario(&scenario.id, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "scenario": scenario.name, "skill": skill.name}), cli.json)
             }
         },
         Commands::Git(args) => match args.command {

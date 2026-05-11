@@ -1,0 +1,174 @@
+id: skills-manager-cli
+name: Skills Manager CLI
+description: "Read and write Skills Manager data via CLI: list/tag/enable skills, manage presets, Git backup"
+icon: "🛠️"
+category: infrastructure
+tools:
+  - name: sm_repo_status
+    description: Show skills repo status (path, skill count, preset count)
+    params: []
+  - name: sm_repo_set_path
+    description: Change the skills root directory
+    params:
+      - name: path
+        type: string
+        required: true
+        description: New path for the skills root directory
+  - name: sm_repo_reset_path
+    description: Reset skills root directory back to default (~/.skills-manager)
+    params: []
+  - name: sm_list_tools
+    description: List all detected agent tools (Claude Code, Cursor, etc.) with install status
+    params: []
+  - name: sm_list_skills
+    description: List all skills with tags, enabled status, and preset membership
+    params:
+      - name: tag
+        type: string
+        required: false
+        description: Filter by tag (exact match)
+      - name: enabled_only
+        type: bool
+        required: false
+        default: false
+  - name: sm_show_skill
+    description: Show full detail of a skill including SKILL.md content
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Skill name, id, or folder name
+  - name: sm_export_skill
+    description: Export a skill to a local directory
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Skill name, id, or folder name
+      - name: dest
+        type: string
+        required: true
+        description: Destination directory path
+  - name: sm_tag_skill
+    description: Add one or more tags to a skill via CLI (comma-separated, deduped)
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Skill name, id, or folder name
+      - name: tags
+        type: string
+        required: true
+        description: Comma-separated tags to add (e.g. "writing,productivity")
+  - name: sm_untag_skill
+    description: Remove a tag from a skill
+    params:
+      - name: ref
+        type: string
+        required: true
+      - name: tag
+        type: string
+        required: true
+  - name: sm_set_tags
+    description: Replace all tags for a skill (empty string clears all tags)
+    params:
+      - name: ref
+        type: string
+        required: true
+      - name: tags
+        type: string
+        required: true
+        description: Comma-separated tags, or empty string to clear
+  - name: sm_batch_tag
+    description: Auto-tag multiple skills at once based on a mapping
+    params:
+      - name: mappings
+        type: string
+        required: true
+        description: "JSON array: [{\"ref\": \"skill-name\", \"tags\": [\"tag1\",\"tag2\"]}]"
+  - name: sm_enable_skill
+    description: Enable a skill
+    params:
+      - name: ref
+        type: string
+        required: true
+  - name: sm_disable_skill
+    description: Disable a skill
+    params:
+      - name: ref
+        type: string
+        required: true
+  - name: sm_set_description
+    description: Update the description of a skill (empty string clears it)
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Skill name, id, or folder name
+      - name: description
+        type: string
+        required: true
+        description: New description text, or empty string to clear
+  - name: sm_list_presets
+    description: List all presets and which is currently active
+    params: []
+  - name: sm_current_preset
+    description: Show the currently active preset
+    params: []
+  - name: sm_preview_preset
+    description: Preview which files a preset would sync before applying
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Preset name or id
+  - name: sm_apply_preset
+    description: Switch to a preset and apply it to all agents
+    params:
+      - name: ref
+        type: string
+        required: true
+        description: Preset name or id
+  - name: sm_preset_add_skill
+    description: Add a skill to a preset (close App first)
+    params:
+      - name: preset
+        type: string
+        required: true
+      - name: skill
+        type: string
+        required: true
+  - name: sm_preset_remove_skill
+    description: Remove a skill from a preset (close App first)
+    params:
+      - name: preset
+        type: string
+        required: true
+      - name: skill
+        type: string
+        required: true
+  - name: sm_git_status
+    description: Show Git backup status of the skills repo
+    params: []
+  - name: sm_git_sync
+    description: Commit all changes and push to remote Git
+    params:
+      - name: message
+        type: string
+        required: false
+        default: "chore: sync skills"
+prompts:
+  - name: guidance
+    path: prompts/guidance.md
+triggers:
+  - "skill manager"
+  - "skills manager"
+  - "skills-manager"
+  - "tag skills"
+  - "tag skill"
+  - "skill tags"
+  - "auto-tag"
+  - "manage skills"
+  - "switch preset"
+  - "backup skills"
+dependencies: []

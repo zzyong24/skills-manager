@@ -68,6 +68,29 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
+      - name: Build CLI binary
+        shell: bash
+        run: |
+          cargo build --release --manifest-path src-tauri/Cargo.toml \
+            --bin skills-manager-cli \
+            --target ${{ matrix.target }}
+
+      - name: Upload CLI binary as release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            ASSET="src-tauri/target/${{ matrix.target }}/release/skills-manager-cli.exe"
+            ASSET_NAME="skills-manager-cli-${{ matrix.label }}.exe"
+          else
+            ASSET="src-tauri/target/${{ matrix.target }}/release/skills-manager-cli"
+            ASSET_NAME="skills-manager-cli-${{ matrix.label }}"
+          fi
+          gh release upload "v${VERSION}" "${ASSET}#${ASSET_NAME}" --clobber
+
       - name: Extract changelog for current version
         id: changelog
         shell: bash

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use app_lib::core::{
-    app_state, central_repo, git_backup, scenario_service, sync_engine, tool_service,
+    app_state, central_repo, git_backup, scenario_service, sync_engine, sync_metadata, tool_service,
 };
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
@@ -23,6 +23,7 @@ enum Commands {
     Repo(RepoArgs),
     Tools(ToolsArgs),
     Skills(SkillsArgs),
+    #[command(name = "presets")]
     Scenarios(ScenarioArgs),
     Git(GitArgs),
 }
@@ -62,6 +63,18 @@ enum SkillsCommand {
     List,
     Show { reference: String },
     Export { reference: String, #[arg(long)] dest: PathBuf },
+    /// Add one or more tags to a skill (comma-separated)
+    Tag { reference: String, tags: String },
+    /// Remove a tag from a skill
+    Untag { reference: String, tag: String },
+    /// Replace all tags for a skill
+    SetTags { reference: String, tags: String },
+    /// Enable a skill
+    Enable { reference: String },
+    /// Disable a skill
+    Disable { reference: String },
+    /// Update the description of a skill
+    SetDescription { reference: String, description: String },
 }
 
 #[derive(Args, Debug)]
@@ -76,6 +89,10 @@ enum ScenarioCommand {
     Current,
     Preview { reference: String },
     Apply { reference: String },
+    /// Add a skill to a preset
+    AddSkill { scenario: String, skill: String },
+    /// Remove a skill from a preset
+    RemoveSkill { scenario: String, skill: String },
 }
 
 #[derive(Args, Debug)]
@@ -227,6 +244,76 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 let result = export_skill(&store, &reference, &dest)?;
                 print_json(&serde_json::json!({"ok": true, "destination": result}), cli.json)
             }
+            SkillsCommand::Tag { reference, tags } => {
+                let skill = resolve_skill(&store, &reference)?;
+                let new_tags: Vec<String> = tags.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+                let mut existing = store.get_tags_map()?.remove(&skill.id).unwrap_or_default();
+                for tag in &new_tags {
+                    if !existing.contains(tag) { existing.push(tag.clone()); }
+                }
+                store.set_tags_for_skill(&skill.id, &existing)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": existing}), cli.json)
+            }
+            SkillsCommand::Untag { reference, tag } => {
+                let skill = resolve_skill(&store, &reference)?;
+                let mut existing = store.get_tags_map()?.remove(&skill.id).unwrap_or_default();
+                existing.retain(|t| t != &tag);
+                store.set_tags_for_skill(&skill.id, &existing)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": existing}), cli.json)
+            }
+            SkillsCommand::SetTags { reference, tags } => {
+                let skill = resolve_skill(&store, &reference)?;
+                let mut seen = std::collections::HashSet::new();
+                let new_tags: Vec<String> = tags.split(',')
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+                    .collect();
+                store.set_tags_for_skill(&skill.id, &new_tags)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "skill": skill.name, "tags": new_tags}), cli.json)
+            }
+            SkillsCommand::Enable { reference } => {
+                let mut skill = resolve_skill(&store, &reference)?;
+                let name = skill.name.clone();
+                skill.enabled = true;
+                store.upsert_skill(&skill)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": true}), cli.json)
+            }
+            SkillsCommand::Disable { reference } => {
+                let mut skill = resolve_skill(&store, &reference)?;
+                let name = skill.name.clone();
+                skill.enabled = false;
+                store.upsert_skill(&skill)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "skill": name, "enabled": false}), cli.json)
+            }
+            SkillsCommand::SetDescription { reference, description } => {
+                let mut skill = resolve_skill(&store, &reference)?;
+                let name = skill.name.clone();
+                let new_desc = if description.is_empty() { None } else { Some(description.clone()) };
+
+                // For the clear case: patch metadata JSON before updating DB,
+                // so write_skill_file's preservation logic sees no old value to restore.
+                if new_desc.is_none() {
+                    let meta_path = sync_metadata::metadata_dir()
+                        .join("skills")
+                        .join(format!("{}.json", skill.id));
+                    if let Ok(content) = std::fs::read_to_string(&meta_path) {
+                        if let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&content) {
+                            meta.as_object_mut().map(|o| o.remove("description"));
+                            let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?);
+                        }
+                    }
+                }
+
+                skill.description = new_desc;
+                store.upsert_skill(&skill)?;
+                sync_metadata::ensure_skill_metadata(&store, &skill.id)?;
+                print_json(&serde_json::json!({"ok": true, "skill": name, "description": description}), cli.json)
+            }
         },
         Commands::Scenarios(args) => match args.command {
             ScenarioCommand::List => print_json(&list_scenarios(&store)?, cli.json),
@@ -242,6 +329,25 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 scenario_service::apply_scenario_to_default(&store, &scenario.id)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                 print_json(&current_scenario(&store)?, cli.json)
+            }
+            ScenarioCommand::AddSkill { scenario, skill } => {
+                let scenario = resolve_scenario(&store, &scenario)?;
+                let skill = resolve_skill(&store, &skill)?;
+                store.add_skill_to_scenario(&scenario.id, &skill.id)?;
+                let tool_keys: Vec<String> = tool_service::list_tool_info(&store)
+                    .into_iter()
+                    .map(|t| t.key)
+                    .collect();
+                store.ensure_scenario_skill_tool_defaults(&scenario.id, &skill.id, &tool_keys)?;
+                sync_metadata::ensure_scenario_metadata(&store, &scenario.id)?;
+                print_json(&serde_json::json!({"ok": true, "preset": scenario.name, "skill": skill.name}), cli.json)
+            }
+            ScenarioCommand::RemoveSkill { scenario, skill } => {
+                let scenario = resolve_scenario(&store, &scenario)?;
+                let skill = resolve_skill(&store, &skill)?;
+                store.remove_skill_from_scenario(&scenario.id, &skill.id)?;
+                sync_metadata::ensure_scenario_metadata(&store, &scenario.id)?;
+                print_json(&serde_json::json!({"ok": true, "preset": scenario.name, "skill": skill.name}), cli.json)
             }
         },
         Commands::Git(args) => match args.command {

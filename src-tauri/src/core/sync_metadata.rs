@@ -40,6 +40,8 @@ pub struct SkillMetaFile {
     pub path_key: String,
     pub enabled: bool,
     pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub source: SourceMeta,
 }
 
@@ -175,7 +177,9 @@ pub(crate) fn reindex_from_metadata_unlocked(store: &SkillStore) -> Result<()> {
         let record = SkillRecord {
             id: meta.skill_id.clone(),
             name,
-            description: parsed.description,
+            // Prefer description override stored in metadata JSON (set by user via CLI);
+            // fall back to SKILL.md frontmatter so new skills still get their description.
+            description: meta.description.clone().or(parsed.description),
             source_type: meta.source.source_type.clone(),
             source_ref,
             source_ref_resolved: previous.and_then(|s| s.source_ref_resolved.clone()),
@@ -383,6 +387,19 @@ fn write_skill_file(skill: &SkillRecord, tags: &[String]) -> Result<()> {
         "import" | "local" => None,
         _ => skill.source_ref.clone(),
     };
+
+    // Preserve existing description override from metadata if present and DB has none.
+    // This prevents the App from clearing a user-set override when it rewrites metadata
+    // after unrelated changes (e.g. sync, enable/disable from GUI).
+    // Exception: if the DB has None AND the existing metadata has a description,
+    // we still preserve it — explicit clears are handled by the caller setting
+    // a sentinel or by the CLI writing the metadata directly before clearing the DB.
+    let existing_meta = read_skill_meta_file(&skill.id);
+    let description = match &skill.description {
+        Some(_) => skill.description.clone(),
+        None => existing_meta.and_then(|m| m.description),
+    };
+
     let meta = SkillMetaFile {
         schema_version: SCHEMA_VERSION,
         skill_id: skill.id.clone(),
@@ -390,6 +407,7 @@ fn write_skill_file(skill: &SkillRecord, tags: &[String]) -> Result<()> {
         path,
         enabled: skill.enabled,
         tags,
+        description,
         source: SourceMeta {
             source_type: skill.source_type.clone(),
             ref_: source_ref,
@@ -554,6 +572,62 @@ fn path_key(path: &str) -> String {
         .map(|part| caseless::default_case_fold_str(&part.nfc().collect::<String>()))
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Read an existing skill metadata JSON file, returning None if it doesn't exist or is malformed.
+pub fn read_skill_meta_file(skill_id: &str) -> Option<SkillMetaFile> {
+    let path = metadata_dir().join("skills").join(format!("{}.json", skill_id));
+    let content = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// Write metadata for a single scenario and all its skill memberships.
+/// Analogous to `ensure_skill_metadata` but for the scenario/membership layer.
+pub fn ensure_scenario_metadata(store: &SkillStore, scenario_id: &str) -> Result<()> {
+    let _lock = RepoLock::acquire("write scenario metadata")?;
+    write_schema()?;
+    ensure_metadata_dirs()?;
+    let scenario = store
+        .get_all_scenarios()?
+        .into_iter()
+        .find(|s| s.id == scenario_id)
+        .ok_or_else(|| anyhow!("scenario not found: {scenario_id}"))?;
+    write_scenario_file(&scenario)?;
+    let skill_ids = store.get_skill_ids_for_scenario(scenario_id)?;
+    for (index, skill_id) in skill_ids.iter().enumerate() {
+        let tools = store
+            .get_scenario_skill_tool_toggles(scenario_id, skill_id)?
+            .into_iter()
+            .map(|toggle| (toggle.tool, toggle.enabled))
+            .collect::<BTreeMap<_, _>>();
+        let member = ScenarioSkillMetaFile {
+            schema_version: SCHEMA_VERSION,
+            scenario_id: scenario_id.to_string(),
+            skill_id: skill_id.clone(),
+            sort_order: index as i32,
+            tools,
+        };
+        write_membership_file(&member)?;
+    }
+    // Remove stale membership files for this scenario (skills that were removed)
+    let skill_id_set: HashSet<String> = skill_ids.into_iter().collect();
+    let membership_dir = metadata_dir().join("scenario-skills");
+    if membership_dir.is_dir() {
+        let prefix = format!("{}.", scenario_id);
+        for entry in std::fs::read_dir(&membership_dir)?.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(&prefix) {
+                // Extract skill_id from filename: <scenario_id>.<skill_id>.json
+                if let Some(rest) = name.strip_prefix(&prefix) {
+                    let skill_id = rest.trim_end_matches(".json");
+                    if !skill_id_set.contains(skill_id) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn sorted_tags(tags: &[String]) -> Vec<String> {

@@ -159,14 +159,59 @@ struct ScenarioInfo {
 }
 
 fn main() {
-    if let Err(err) = run() {
-        eprintln!("error: {err}");
+    // Detect `--json` from raw argv so clap parse failures can also emit a
+    // JSON error envelope. We can't rely on a parsed `Cli` here because the
+    // parse itself may fail (unknown flag, missing arg, bad subcommand).
+    // - Accept both `--json` and `--json=...` forms (clap rejects the latter
+    //   for SetTrue, but the user still meant to enable JSON mode).
+    // - Stop scanning at `--` so positional args like `cmd -- --json` don't
+    //   falsely trigger the envelope.
+    let json = std::env::args()
+        .skip(1)
+        .take_while(|a| a != "--")
+        .any(|a| a == "--json" || a.starts_with("--json="));
+
+    let cli = match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) => {
+            // --help / --version come back as `Err` but should still print to
+            // stdout and exit 0. clap signals that with `use_stderr() == false`
+            // (real parse errors set it to true). Honor that even with --json
+            // so users get readable help text instead of a JSON failure.
+            if !e.use_stderr() {
+                e.exit();
+            }
+            if json {
+                let envelope = serde_json::json!({
+                    "ok": false,
+                    "error": e.to_string(),
+                });
+                eprintln!("{}", serde_json::to_string(&envelope).unwrap());
+                // clap convention: usage/parse errors exit with 2.
+                std::process::exit(2);
+            }
+            // Default clap behavior for real parse errors.
+            e.exit();
+        }
+    };
+
+    if let Err(err) = run(cli) {
+        if json {
+            // Stable error envelope for scripted/agent consumers. `{err:#}`
+            // joins the anyhow cause chain so callers get the full context.
+            let envelope = serde_json::json!({
+                "ok": false,
+                "error": format!("{err:#}"),
+            });
+            eprintln!("{}", serde_json::to_string(&envelope).unwrap());
+        } else {
+            eprintln!("error: {err:#}");
+        }
         std::process::exit(1);
     }
 }
 
-fn run() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+fn run(cli: Cli) -> anyhow::Result<()> {
     if let Some(skills_root) = &cli.skills_root {
         let base = central_repo::external_base_dir(skills_root);
         central_repo::set_runtime_base_dir_override(Some(base));
@@ -312,8 +357,19 @@ fn run() -> anyhow::Result<()> {
                 print_json(&git_backup::get_status(&central_repo::skills_dir())?, cli.json)
             }
             GitCommand::Clone { url } => {
-                git_backup::clone_into(&central_repo::skills_dir(), &url)?;
-                print_json(&git_backup::get_status(&central_repo::skills_dir())?, cli.json)
+                let target = central_repo::skills_dir();
+                // When --skills-root is set the user is pointing the CLI at a
+                // potentially fresh / agent-supplied directory. The default
+                // clone_into would rename a non-empty target aside, clone,
+                // then merge the backup back in — useful for the GUI's
+                // "populate-then-clone" flow, but data-lossy if an agent
+                // points --skills-root at an unrelated populated directory.
+                if cli.skills_root.is_some() {
+                    git_backup::clone_into_strict(&target, &url)?;
+                } else {
+                    git_backup::clone_into(&target, &url)?;
+                }
+                print_json(&git_backup::get_status(&target)?, cli.json)
             }
             GitCommand::SetRemote { url } => {
                 git_backup::set_remote(&central_repo::skills_dir(), &url)?;

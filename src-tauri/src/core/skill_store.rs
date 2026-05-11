@@ -97,6 +97,10 @@ pub struct ScenarioSkillToolToggleRecord {
 impl SkillStore {
     pub fn new(db_path: &PathBuf) -> Result<Self> {
         let conn = Connection::open(db_path)?;
+        // busy_timeout makes concurrent CLI + GUI writers wait briefly instead
+        // of failing immediately with SQLITE_BUSY. 5s is generous for any
+        // realistic write contention here.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
 
         super::migrations::run_migrations(&conn)?;

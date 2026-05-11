@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function canRun(command, args = ['--version']) {
@@ -54,7 +54,7 @@ const result = spawnSync(cargo, cargoArgs, {
   stdio: 'inherit',
   env: {
     ...process.env,
-    PATH: `${dirname(cargo)}:${process.env.PATH ?? ''}`,
+    PATH: `${dirname(cargo)}${delimiter}${process.env.PATH ?? ''}`,
   },
 });
 

@@ -496,6 +496,51 @@ pub fn clone_into(skills_dir: &Path, url: &str) -> Result<()> {
     clone_into_unlocked(skills_dir, url)
 }
 
+/// Clone variant that refuses to merge a populated non-git directory into the
+/// cloned repo. Used by agent-facing entry points (e.g. CLI `--skills-root`)
+/// where an accidental pointing at an unrelated populated directory would
+/// otherwise silently absorb its contents.
+///
+/// The check runs inside the same `RepoLock` as the clone, so any other
+/// skills-manager process attempting to populate the target between check
+/// and clone is serialized.
+pub fn clone_into_strict(skills_dir: &Path, url: &str) -> Result<()> {
+    let _lock = RepoLock::acquire("git clone")?;
+    ensure_clean_clone_target(skills_dir)?;
+    clone_into_unlocked(skills_dir, url)
+}
+
+/// Refuse a clone target that is a file, or a non-empty directory that is not
+/// already a git repo. An empty or non-existent target is fine, and an
+/// existing `.git` is left to `clone_into_unlocked` to reject with its own
+/// message. Pure logic — no locking — so callers must hold their own lock if
+/// they need atomicity with a subsequent operation.
+fn ensure_clean_clone_target(skills_dir: &Path) -> Result<()> {
+    if !skills_dir.exists() {
+        return Ok(());
+    }
+    if skills_dir.join(".git").exists() {
+        return Ok(());
+    }
+    if skills_dir.is_file() {
+        anyhow::bail!(
+            "refusing to clone into {}: path exists and is a file, not a directory",
+            skills_dir.display()
+        );
+    }
+    let mut entries = std::fs::read_dir(skills_dir)
+        .with_context(|| format!("Failed to read clone target {}", skills_dir.display()))?;
+    if entries.next().is_some() {
+        anyhow::bail!(
+            "refusing to clone into {}: directory is non-empty and not a git repo. \
+             Files in the target would be silently merged into the cloned repo. \
+             Point the target at an empty or non-existent directory.",
+            skills_dir.display()
+        );
+    }
+    Ok(())
+}
+
 /// Reset a local repo by clearing its `.git` then cloning from the remote.
 /// The existing skill files are preserved through the same backup-then-merge flow
 /// used by `clone_into_unlocked`. The previous `.git` is moved to a sibling
@@ -931,6 +976,66 @@ mod tests {
         assert_eq!(
             parse_restored_from_tag_message(msg).as_deref(),
             Some("sm-v-20260318-153012-abc1234")
+        );
+    }
+
+    // ── ensure_clean_clone_target ──
+    // Tested directly (without RepoLock) so cases run in parallel without
+    // serializing on the process-wide clone lock.
+
+    #[test]
+    fn ensure_clean_clone_target_allows_nonexistent_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("not-yet");
+        ensure_clean_clone_target(&target).unwrap();
+    }
+
+    #[test]
+    fn ensure_clean_clone_target_allows_empty_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("empty");
+        std::fs::create_dir_all(&target).unwrap();
+        ensure_clean_clone_target(&target).unwrap();
+    }
+
+    #[test]
+    fn ensure_clean_clone_target_allows_existing_git_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("existing-repo");
+        std::fs::create_dir_all(target.join(".git")).unwrap();
+        std::fs::write(target.join("README"), b"x").unwrap();
+        // Existing .git is delegated to clone_into_unlocked's own rejection.
+        ensure_clean_clone_target(&target).unwrap();
+    }
+
+    #[test]
+    fn ensure_clean_clone_target_refuses_non_empty_non_git() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("populated");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("user-file.txt"), b"important").unwrap();
+
+        let err = ensure_clean_clone_target(&target).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("non-empty") && msg.contains("not a git repo"),
+            "unexpected message: {msg}"
+        );
+        // Crucial: the user file must still be there.
+        assert!(target.join("user-file.txt").exists());
+    }
+
+    #[test]
+    fn ensure_clean_clone_target_refuses_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("a-file");
+        std::fs::write(&target, b"x").unwrap();
+
+        let err = ensure_clean_clone_target(&target).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("file, not a directory"),
+            "unexpected message: {msg}"
         );
     }
 }

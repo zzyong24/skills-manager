@@ -160,9 +160,24 @@ pub fn skills_dir() -> PathBuf {
 /// `<default-base>/external/<sanitized-name>-<short-hash>/`, keyed by the
 /// canonical path of the skills root so repeat invocations reuse the same DB.
 pub fn external_base_dir(skills_root: &Path) -> PathBuf {
-    let canonical = skills_root
-        .canonicalize()
-        .unwrap_or_else(|_| skills_root.to_path_buf());
+    // canonicalize() requires the path to exist. For not-yet-cloned targets we
+    // still want a stable namespace, so fall back to absolutizing + lexically
+    // normalizing the path. Without this, `./my-skills`, `my-skills`, and
+    // `a/../my-skills` would hash to different namespaces despite resolving
+    // to the same location.
+    let canonical = match skills_root.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            let absolute = if skills_root.is_absolute() {
+                skills_root.to_path_buf()
+            } else {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(skills_root))
+                    .unwrap_or_else(|_| skills_root.to_path_buf())
+            };
+            lexically_normalize(&absolute)
+        }
+    };
     let name = canonical
         .file_name()
         .and_then(|n| n.to_str())
@@ -174,6 +189,30 @@ pub fn external_base_dir(skills_root: &Path) -> PathBuf {
     default_base_dir()
         .join("external")
         .join(format!("{}-{}", sanitize_dir_name(name), short_hash))
+}
+
+/// Lexically normalize `.` and `..` segments without touching the filesystem.
+/// `..` over a normal segment cancels it; `..` over a root or another `..`
+/// is preserved (so we don't pretend to escape the filesystem root).
+fn lexically_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out: Vec<Component> = Vec::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.last() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {
+                    // can't go above root — drop the `..`
+                }
+                _ => out.push(comp),
+            },
+            other => out.push(other),
+        }
+    }
+    out.iter().collect()
 }
 
 fn sanitize_dir_name(name: &str) -> String {
@@ -380,5 +419,40 @@ mod tests {
         assert_eq!(sanitize_dir_name("my skills"), "my-skills");
         assert_eq!(sanitize_dir_name("a/b\\c:d"), "a-b-c-d");
         assert_eq!(sanitize_dir_name(""), "external");
+    }
+
+    #[test]
+    fn external_base_dir_relative_path_is_stable_against_absolute_form() {
+        // For a not-yet-existing target, a relative path should namespace the
+        // same as its cwd-absolutized form. We simulate by passing both forms
+        // and asserting they match.
+        let cwd = std::env::current_dir().unwrap();
+        let rel = Path::new("nonexistent-skills-target-xyz");
+        let abs = cwd.join(rel);
+        assert_eq!(external_base_dir(rel), external_base_dir(&abs));
+    }
+
+    #[test]
+    fn external_base_dir_normalizes_redundant_segments() {
+        // `./x`, `x`, and `a/../x` should all hash to the same namespace when
+        // none of them exist on disk.
+        let plain = external_base_dir(Path::new("nonexistent-norm-target"));
+        let dot = external_base_dir(Path::new("./nonexistent-norm-target"));
+        let parent = external_base_dir(Path::new("a/../nonexistent-norm-target"));
+        assert_eq!(plain, dot);
+        assert_eq!(plain, parent);
+    }
+
+    #[test]
+    fn lexically_normalize_handles_basic_cases() {
+        assert_eq!(
+            lexically_normalize(Path::new("/a/./b/../c")),
+            PathBuf::from("/a/c")
+        );
+        assert_eq!(
+            lexically_normalize(Path::new("./a/b")),
+            PathBuf::from("a/b")
+        );
+        assert_eq!(lexically_normalize(Path::new("/..")), PathBuf::from("/"));
     }
 }

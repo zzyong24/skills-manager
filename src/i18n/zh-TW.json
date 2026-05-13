@@ -32,7 +32,11 @@
       },
       "sync": {
         "title": "我的 Skills",
-        "description": "瀏覽所有已安裝的 Skills，支援批次標籤編輯和依 Agent 同步開關。點擊 Skill 可查看文件、版本歷史和 Agent 同步詳情。"
+        "description": "瀏覽所有已安裝的 Skills，支援批次標籤編輯和依 Agent 同步開關。點擊 Skill 卡片上的 Agent 圖示即可一鍵為該 Agent 安裝或移除這個 Skill；點擊卡片本身可查看文件、版本歷史和 Agent 同步詳情。"
+      },
+      "global": {
+        "title": "全域工作區",
+        "description": "每個 Agent 都有自己的頁面，列出其全域目錄裡的所有 Skills（包括不是透過 Skills Manager 安裝的），與 Agent 實際看到的內容保持一致。可依 Agent 新增或移除 Skills，或透過「全部 Agents」總覽跨所有已安裝 Agent 統一管理。"
       },
       "projects": {
         "title": "專案工作區",
@@ -44,7 +48,7 @@
       },
       "settings": {
         "title": "設定",
-        "description": "管理 Agent 路徑與開關、自訂 Agent、同步模式、主題字級、語言、網路代理、Git 遠端、AI 搜尋 Key，以及應用更新。"
+        "description": "管理 Agent 路徑與開關、自訂 Agent、拖曳調整 Agent 在全應用中的顯示順序、同步模式、主題字級、語言、網路代理、Git 遠端、AI 搜尋 Key，以及應用更新。"
       }
     }
   },
@@ -409,7 +413,7 @@
     "language": "語言",
     "help": "說明",
     "about": "關於",
-    "version": "Skills Manager 1.18.0",
+    "version": "Skills Manager 1.19.0",
     "tagline": "跨平台。極簡、高效、無感多 Preset 切換。",
     "checkUpdate": "檢查更新",
     "checking": "檢查中…",
@@ -708,6 +712,27 @@
     "deleteSelected": "移除 {{count}} 個",
     "batchRemoveConfirm": "從 {{agent}} 移除 {{count}} 個 Skills？此操作不會刪除技能庫中的資料。",
     "batchRemoved": "已移除 {{count}} 個 Skill",
-    "batchRemoveFailed": "{{count}} 個 Skill 移除失敗"
+    "batchRemoveFailed": "{{count}} 個 Skill 移除失敗",
+    "localSkills": {
+      "searchPlaceholder": "搜尋 Agent Skills…",
+      "empty": "未發現本機 Skills",
+      "summary": "{{total}} / {{managed}} 個受管理 / {{synced}} 個已同步",
+      "upload": "上傳",
+      "pull": "拉取",
+      "removeManaged": "從 Agent 移除",
+      "uploadedToast": "已將「{{name}}」上傳到 Skills 中心，未自動同步回 {{agent}}。",
+      "pulledToast": "已從 Skills 中心更新 {{agent}} 中的「{{name}}」。",
+      "uploadConfirmTitle": "更新中心 Skill？",
+      "uploadConfirmMessage": "將「{{name}}」上傳到匹配的 Skills 中心項目？這會替換中心副本。",
+      "pullConfirmTitle": "覆蓋本機 Skill？",
+      "pullConfirmMessage": "將 Skills 中心版本的「{{name}}」拉取到 {{agent}}？這會覆蓋該 Agent 的本機副本。",
+      "status": {
+        "localOnly": "僅本機",
+        "inSync": "已同步",
+        "localNewer": "本機有變更",
+        "centerNewer": "中心有變更",
+        "diverged": "衝突"
+      }
+    }
   }
 }

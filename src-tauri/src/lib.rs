@@ -385,6 +385,8 @@ pub fn run() {
             commands::tools::get_tool_status,
             commands::tools::set_tool_enabled,
             commands::tools::set_all_tools_enabled,
+            commands::tools::get_tool_order_cmd,
+            commands::tools::set_tool_order_cmd,
             commands::tools::set_custom_tool_path,
             commands::tools::reset_custom_tool_path,
             commands::tools::set_custom_tool_project_path,
@@ -466,6 +468,11 @@ pub fn run() {
             commands::projects::toggle_project_skill,
             commands::projects::delete_project_skill,
             commands::projects::slugify_skill_names,
+            // Agent local workspace
+            commands::agent_workspace::get_global_local_skills,
+            commands::agent_workspace::get_global_local_skill_document,
+            commands::agent_workspace::import_global_local_skill_to_center,
+            commands::agent_workspace::update_global_local_skill_from_center,
             // Scenarios
             commands::scenarios::get_scenarios,
             commands::scenarios::get_active_scenario,
@@ -484,4 +491,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

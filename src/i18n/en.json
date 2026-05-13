@@ -32,7 +32,11 @@
       },
       "sync": {
         "title": "Library",
-        "description": "Browse all installed skills with bulk tag editing and per-agent sync toggles. Click any skill to view docs, version history, and agent sync details."
+        "description": "Browse all installed skills with bulk tag editing and per-agent sync toggles. Click an agent icon on any skill card to install or remove that skill for that agent in one click. Click the card itself to view docs, version history, and agent sync details."
+      },
+      "global": {
+        "title": "Global Workspace",
+        "description": "Each agent gets its own page listing every skill in its global folder — including ones installed outside Skills Manager — so the view matches what the agent actually sees. Add or remove skills per agent, or use the All Agents overview to manage every installed agent at once."
       },
       "projects": {
         "title": "Project Workspaces",
@@ -44,7 +48,7 @@
       },
       "settings": {
         "title": "Settings",
-        "description": "Manage agent paths and toggles, add custom agents, change sync mode, theme, text size, language, proxy, Git remote, AI search key, and check for app updates."
+        "description": "Manage agent paths and toggles, add custom agents, drag to reorder how agents appear across the app, change sync mode, theme, text size, language, proxy, Git remote, AI search key, and check for app updates."
       }
     }
   },
@@ -118,6 +122,10 @@
     "unsyncNothingToDo": "This skill is not synced to any agent yet",
     "syncCompleted": "{{name}} synced to {{count}} agents",
     "unsyncCompleted": "{{name}} unsynced from {{count}} agents",
+    "targetClickInstall": "Click to install",
+    "targetClickUninstall": "Click to uninstall",
+    "targetInstalled": "{{name}} installed to {{agent}}",
+    "targetUninstalled": "{{name}} uninstalled from {{agent}}",
     "gitRepoSync": "Sync",
     "gitRepoSyncing": "Syncing…",
     "gitRepoSynced": "Synced",
@@ -381,6 +389,7 @@
     "disableAgent": "Disable this agent",
     "editPath": "Edit path",
     "resetPath": "Reset to default",
+    "dragToReorder": "Drag to reorder",
     "pathOverridden": "Custom path",
     "customAgent": "Custom",
     "addCustomAgent": "New Agent",
@@ -439,7 +448,7 @@
     "language": "Language",
     "help": "Help",
     "about": "About",
-    "version": "Skills Manager 1.18.0",
+    "version": "Skills Manager 1.19.0",
     "tagline": "Cross-platform. Minimal, efficient, seamless multi-scenario switching.",
     "checkUpdate": "Check for Updates",
     "checking": "Checking…",
@@ -671,6 +680,8 @@
     "customAssignment": "{{assigned}} / {{total}} agents",
     "agentAdded": "\"{{name}}\" added to {{agent}}",
     "agentRemoved": "\"{{name}}\" removed from {{agent}}",
+    "agentClickAdd": "Click to add",
+    "agentClickRemove": "Click to remove",
     "agentAddRequiresCenter": "{{agent}} can only be added after this skill is synced to the Skills Center",
     "noSkillsToExport": "No skills available to add to this project",
     "import": "Add",
@@ -771,6 +782,27 @@
     "deleteSelected": "Remove {{count}}",
     "batchRemoveConfirm": "Remove {{count}} selected skills from {{agent}}? This only unlinks them from the global workspace; central library files are kept.",
     "batchRemoved": "{{count}} skills removed",
-    "batchRemoveFailed": "{{count}} skills failed to remove"
+    "batchRemoveFailed": "{{count}} skills failed to remove",
+    "localSkills": {
+      "searchPlaceholder": "Search agent skills...",
+      "empty": "No local skills found",
+      "summary": "{{total}} / {{managed}} managed / {{synced}} in sync",
+      "upload": "Upload",
+      "pull": "Pull",
+      "removeManaged": "Remove from agent",
+      "uploadedToast": "Uploaded \"{{name}}\" to Skills Center. It was not synced back to {{agent}}.",
+      "pulledToast": "Updated \"{{name}}\" from Skills Center in {{agent}}.",
+      "uploadConfirmTitle": "Update center skill?",
+      "uploadConfirmMessage": "Upload \"{{name}}\" to the matching Skills Center entry? This replaces the center copy.",
+      "pullConfirmTitle": "Overwrite local skill?",
+      "pullConfirmMessage": "Pull the Skills Center version of \"{{name}}\" into {{agent}}? This overwrites the local agent copy.",
+      "status": {
+        "localOnly": "Local only",
+        "inSync": "In sync",
+        "localNewer": "Local changed",
+        "centerNewer": "Center changed",
+        "diverged": "Conflict"
+      }
+    }
   }
 }

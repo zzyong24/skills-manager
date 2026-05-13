@@ -105,6 +105,7 @@ fn read_workspace_skills(
             rec.disabled_path.as_deref().map(Path::new),
             &linked_workspace_agent_key(rec),
             &linked_workspace_agent_name(rec),
+            true,
         );
     }
     project_scanner::read_project_skills(Path::new(&rec.path), configs)
@@ -209,7 +210,7 @@ fn project_to_dto(
     }
 }
 
-fn ensure_safe_skill_relative_path(skill_relative_path: &str) -> Result<(), AppError> {
+pub(crate) fn ensure_safe_skill_relative_path(skill_relative_path: &str) -> Result<(), AppError> {
     if skill_relative_path.trim().is_empty() {
         return Err(AppError::invalid_input("Invalid skill directory path"));
     }
@@ -226,7 +227,7 @@ fn ensure_safe_skill_relative_path(skill_relative_path: &str) -> Result<(), AppE
     Ok(())
 }
 
-fn ensure_dir_within_root(path: &Path, root: &Path) -> Result<(), AppError> {
+pub(crate) fn ensure_dir_within_root(path: &Path, root: &Path) -> Result<(), AppError> {
     // First check that the lexical path (before symlink resolution) is under root.
     // This ensures the link itself lives where expected.
     let abs_path = if path.is_absolute() {
@@ -381,7 +382,7 @@ fn ensure_distinct_linked_workspace_roots(
     Ok(())
 }
 
-fn slugify_skill_dir_name(name: &str) -> String {
+pub(crate) fn slugify_skill_dir_name(name: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
     for ch in name.chars().flat_map(|c| c.to_lowercase()) {
@@ -402,7 +403,7 @@ fn slugify_skill_dir_name(name: &str) -> String {
     }
 }
 
-fn source_ref_matches_skill_path(
+pub(crate) fn source_ref_matches_skill_path(
     skill_path: &str,
     skill_canonical: Option<&PathBuf>,
     managed: &SkillRecord,
@@ -422,7 +423,7 @@ fn source_ref_matches_skill_path(
     source_canonical == *skill_canonical
 }
 
-fn find_best_center_match<'a>(
+pub(crate) fn find_best_center_match<'a>(
     skill: &project_scanner::ProjectSkillInfo,
     all_managed: &'a [SkillRecord],
 ) -> Option<&'a SkillRecord> {
@@ -448,7 +449,7 @@ fn find_best_center_match<'a>(
         .map(|(managed, _)| managed)
 }
 
-fn classify_sync_status(
+pub(crate) fn classify_sync_status(
     skill: &project_scanner::ProjectSkillInfo,
     managed: Option<&SkillRecord>,
 ) -> String {
@@ -862,7 +863,6 @@ pub async fn import_project_skill_to_center(
         let result =
             installer::install_from_local(&source_path, Some(&skill.name)).map_err(AppError::io)?;
 
-        let active = store.get_active_scenario_id().ok().flatten();
         let now = chrono::Utc::now().timestamp_millis();
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -889,12 +889,6 @@ pub async fn import_project_skill_to_center(
         };
 
         store.insert_skill(&skill_record).map_err(AppError::db)?;
-
-        if let Some(scenario_id) = active.as_deref() {
-            store
-                .add_skill_to_scenario(scenario_id, &id)
-                .map_err(AppError::db)?;
-        }
 
         Ok(())
     })

@@ -17,40 +17,40 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" width="800" alt="Skills Manager Demo" />
+  <img src="assets/demo/library.png" width="800" alt="Skills Manager Library" />
 </p>
 
-<p align="center"><strong>My Skills</strong></p>
-<p align="center"><img src="assets/CleanShot_20260419_003504@2x.png" width="800" alt="My Skills" /></p>
-
 <p align="center"><strong>Install Skills — Marketplace</strong></p>
-<p align="center"><img src="assets/CleanShot_20260316_231142@2x.png" width="800" alt="Install Skills Marketplace" /></p>
+<p align="center"><img src="assets/demo/install-skills.png" width="800" alt="Install Skills Marketplace" /></p>
 
-<p align="center"><strong>Projects</strong></p>
-<p align="center"><img src="assets/CleanShot_20260419_003526@2x.png" width="800" alt="Projects" /></p>
+<p align="center"><strong>Global Workspace</strong></p>
+<p align="center"><img src="assets/demo/global-workspace.png" width="800" alt="Global Workspace" /></p>
+
+<p align="center"><strong>Agent Workspace</strong></p>
+<p align="center"><img src="assets/demo/agent-workspace.png" width="800" alt="Agent Workspace" /></p>
+
+<p align="center"><strong>Project Workspace</strong></p>
+<p align="center"><img src="assets/demo/project-workspace.png" width="800" alt="Project Workspace" /></p>
 
 <p align="center"><strong>Settings</strong></p>
-<p align="center"><img src="assets/CleanShot_20260419_003825@2x.png" width="800" alt="Settings" /></p>
-
-<p align="center"><strong>Code Diff</strong></p>
-<p align="center"><img src="assets/CleanShot_20260419_003613@2x.png" width="800" alt="Code Diff" /></p>
+<p align="center"><img src="assets/demo/settings.png" width="800" alt="Settings" /></p>
 
 ## Features
 
 - **Unified skill library** — Install skills from Git repos, local folders, `.zip` / `.skill` archives, or the [skills.sh](https://skills.sh) marketplace. Everything goes into one central repo, which defaults to `~/.skills-manager` and can be customized in **Settings**.
 - **Marketplace + AI search** — Browse popular skills from the marketplace, run keyword search, or enable SkillsMP AI search with your API key.
 - **Presets** — Group skills into named presets. In any workspace, click a preset pill to instantly activate or deactivate all its skills for the current agent scope. The sidebar lists all presets for quick access.
-- **Global Workspace** — Browse and manage globally installed skills per agent. Switch between agents from the sidebar, or use the All Agents overview to manage across all installed agents at once.
+- **Global Workspace** — Each agent gets its own page listing every skill in its global folder — including ones installed outside Skills Manager — so the view always reflects what the agent actually sees. Add or remove skills per agent, or use the All Agents overview to manage every installed agent at once.
 - **Project Workspaces** — View and manage project-local skill folders for supported agents, compare them with your central library, and sync changes in either direction. Supports nested skill directories and per-agent assignment when exporting.
 - **Linked Workspaces** — Point to any directory as a skills root — useful for skills that live outside the default agent paths. Managed as a standalone workspace without participating in global preset sync.
-- **Multi-tool sync** — Sync skills to any supported tool via symlink or copy with a single click.
+- **Multi-tool sync** — Sync skills to any supported tool via symlink or copy with a single click. Every skill card shows an agent icon badge per enabled agent — click a badge to install or remove that skill for that agent right from the card, with the badge reflecting live sync state.
 - **Batch operations** — Multi-select skills for bulk enable/disable, export, or delete. Project Workspaces also support bulk enable/disable for project-local skills.
 - **Skill tagging and filters** — Tag skills, use tags to group similar skills, and filter by source or tag to narrow large libraries quickly.
 - **Update tracking** — Check for upstream updates on Git-based skills; re-import local ones.
 - **Skill preview and source inspection** — Read `SKILL.md` / `README.md`, inspect source metadata, and compare local content with the upstream version inside the app.
 - **Custom tools** — Add your own agents/tools with custom skills directories, or override the default path for any built-in tool.
 - **Git backup and restore** — Version-control your skill library with Git for backup and multi-machine sync, then restore snapshot versions from Version History when needed.
-- **Flexible app settings** — Configure repo path, sync mode, theme, text size, language, tray behavior, proxy, Git remote, and update checks in one place.
+- **Flexible app settings** — Configure repo path, sync mode, theme, text size, language, tray behavior, proxy, Git remote, update checks, and the order agents appear throughout the app — all in one place.
 
 ## Core Concepts
 
@@ -59,7 +59,7 @@
 </p>
 
 - **Presets are reusable skill groups** — A preset is a named collection of skills. Activate a preset in any workspace to add all its skills to the selected agents; deactivate to remove them. Applying a preset is a one-time copy — not a live sync.
-- **Global Workspace manages per-agent global skills** — Each installed agent has its own global skills folder (e.g. `~/.claude/skills/` for Claude Code). Use Global Workspace to view, add, and remove skills for each agent, or manage all agents at once from the All Agents overview.
+- **Global Workspace manages per-agent global skills** — Each installed agent has its own global skills folder (e.g. `~/.claude/skills/` for Claude Code). Each agent page lists everything in that folder — even skills installed without Skills Manager — so you can add, remove, or adopt them; the All Agents overview manages every agent at once.
 - **Project Workspaces are project-local skill sets** — A project workspace manages the skills that live inside a specific project (e.g. `<project>/.claude/skills/`). Skills added here only apply to that project.
 - **Tags are for grouping and filtering** — Use tags to label similar skills, then filter by tag to find the subset you want quickly.
 - **Batch control works everywhere** — Multi-select skills in any workspace for bulk operations.
@@ -105,7 +105,7 @@ You can also add custom tools in **Settings** and manage their skills the same w
 
 ## In-App Help
 
-The **Help** button in **Settings** mirrors the current product flow: scenarios, skill installation, My Skills management, Project Workspaces, Git backup, and environment-level settings. It is intended as the in-app version of this quick-start guide.
+The **Help** button in **Settings** mirrors the current product flow: recommended workflows, presets, skill installation, the Library, the Global Workspace, Project Workspaces, Git backup, and environment-level settings. It is intended as the in-app version of this quick-start guide.
 
 ## Tech Stack
 

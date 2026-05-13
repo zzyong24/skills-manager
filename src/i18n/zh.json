@@ -32,7 +32,11 @@
       },
       "sync": {
         "title": "我的 Skills",
-        "description": "浏览所有已安装 Skills，支持批量标签编辑和按 Agent 同步开关。点击 Skill 可查看文档、版本历史和 Agent 同步详情。"
+        "description": "浏览所有已安装 Skills，支持批量标签编辑和按 Agent 同步开关。点击 Skill 卡片上的 Agent 图标即可一键为该 Agent 安装或移除这个 Skill；点击卡片本身可查看文档、版本历史和 Agent 同步详情。"
+      },
+      "global": {
+        "title": "全局工作区",
+        "description": "每个 Agent 都有自己的页面，列出其全局目录里的所有 Skills（包括不是通过 Skills Manager 安装的），与 Agent 实际看到的内容保持一致。可按 Agent 添加或移除 Skills，或通过「全部 Agents」总览跨所有已安装 Agent 统一管理。"
       },
       "projects": {
         "title": "项目工作区",
@@ -44,7 +48,7 @@
       },
       "settings": {
         "title": "设置",
-        "description": "管理 Agent 路径与开关、自定义 Agent、同步模式、主题字号、语言、网络代理、Git 远程、AI 搜索 Key，以及应用更新。"
+        "description": "管理 Agent 路径与开关、自定义 Agent、拖拽调整 Agent 在全应用中的显示顺序、同步模式、主题字号、语言、网络代理、Git 远程、AI 搜索 Key，以及应用更新。"
       }
     }
   },
@@ -118,6 +122,10 @@
     "unsyncNothingToDo": "这个 Skill 当前没有已同步的 Agent",
     "syncCompleted": "{{name}} 已同步到 {{count}} 个 Agent",
     "unsyncCompleted": "{{name}} 已从 {{count}} 个 Agent 取消同步",
+    "targetClickInstall": "点击安装",
+    "targetClickUninstall": "点击卸载",
+    "targetInstalled": "已将 {{name}} 安装到 {{agent}}",
+    "targetUninstalled": "已从 {{agent}} 卸载 {{name}}",
     "gitRepoSync": "同步",
     "gitRepoSyncing": "同步中…",
     "gitRepoSynced": "已同步",
@@ -381,6 +389,7 @@
     "disableAgent": "禁用此 Agent",
     "editPath": "编辑路径",
     "resetPath": "恢复默认",
+    "dragToReorder": "拖动调整顺序",
     "pathOverridden": "自定义路径",
     "customAgent": "自定义",
     "addCustomAgent": "新增 Agent",
@@ -439,7 +448,7 @@
     "language": "语言",
     "help": "帮助",
     "about": "关于",
-    "version": "Skills Manager 1.18.0",
+    "version": "Skills Manager 1.19.0",
     "tagline": "跨平台。极简、高效、无感多 Preset 切换。",
     "checkUpdate": "检查更新",
     "checking": "检查中…",
@@ -671,6 +680,8 @@
     "customAssignment": "{{assigned}} / {{total}} Agents",
     "agentAdded": "已将“{{name}}”同步到 {{agent}}",
     "agentRemoved": "已从 {{agent}} 移除“{{name}}”",
+    "agentClickAdd": "点击添加",
+    "agentClickRemove": "点击移除",
     "agentAddRequiresCenter": "要添加到 {{agent}}，请先将该 Skill 同步到 Skills Center",
     "noSkillsToExport": "中央仓库中没有可添加到项目的 Skill",
     "import": "添加",
@@ -771,6 +782,27 @@
     "deleteSelected": "移除 {{count}} 个",
     "batchRemoveConfirm": "从 {{agent}} 移除 {{count}} 个 Skills？此操作不会删除技能库中的数据。",
     "batchRemoved": "已移除 {{count}} 个 Skill",
-    "batchRemoveFailed": "{{count}} 个 Skill 移除失败"
+    "batchRemoveFailed": "{{count}} 个 Skill 移除失败",
+    "localSkills": {
+      "searchPlaceholder": "搜索 Agent Skills…",
+      "empty": "未发现本地 Skills",
+      "summary": "{{total}} / {{managed}} 个受管理 / {{synced}} 个已同步",
+      "upload": "上传",
+      "pull": "拉取",
+      "removeManaged": "从 Agent 移除",
+      "uploadedToast": "已将“{{name}}”上传到 Skills 中心，未自动同步回 {{agent}}。",
+      "pulledToast": "已从 Skills 中心更新 {{agent}} 中的“{{name}}”。",
+      "uploadConfirmTitle": "更新中心 Skill？",
+      "uploadConfirmMessage": "将“{{name}}”上传到匹配的 Skills 中心条目？这会替换中心副本。",
+      "pullConfirmTitle": "覆盖本地 Skill？",
+      "pullConfirmMessage": "将 Skills 中心版本的“{{name}}”拉取到 {{agent}}？这会覆盖该 Agent 的本地副本。",
+      "status": {
+        "localOnly": "仅本地",
+        "inSync": "已同步",
+        "localNewer": "本地有变更",
+        "centerNewer": "中心有变更",
+        "diverged": "冲突"
+      }
+    }
   }
 }

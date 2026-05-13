@@ -5,6 +5,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.19.0] - 2026-05-13
+
+### 新增
+- **Global Workspace 显示 Agent 本地 Skills**：每个 Agent 的页面现在会列出其全局目录里的所有 Skills，包括不是通过 Skills Manager 安装的。可按 Agent 把仅存在于本地的 Skill 上传到中央库、把库里的更新拉取到本地副本，或移除已纳管的 Skill；列表支持搜索和标签筛选。
+
+### 变更
+- **在卡片上直接安装 Skill**：每张 Skill 卡片现在会为每个已启用 Agent 显示一个图标角标（取代原来的两字母标签）。点击角标即可直接在卡片上为该 Agent 安装或移除这个 Skill，操作时角标会实时反映同步状态并显示加载动画。
+- **可自定义 Agent 顺序**：设置页支持在每个分组（主流 / 更多 / 自定义）内拖拽调整 Agent 顺序，这个顺序会应用到所有出现 Agent 的地方 —— 卡片角标、工作区列表、开关等。
+- **统一 Skill 卡片点击行为**：在技能库、Global Workspace 和项目工作区中，点击卡片任意位置都会打开详情面板；卡片上的操作按钮不再同时触发卡片点击。
+- **帮助弹窗**：新增「全局工作区」一项，并更新了「技能库」和「设置」两项的说明，覆盖新的 Agent 图标角标和 Agent 排序。
+
+### 修复
+- **OpenCode 项目 Skills 路径**：OpenCode 的项目级 Skills 现在会安装到 `<project>/.opencode/skills/`（OpenCode 实际读取的位置），而不是之前的 `<project>/.config/opencode/skills/`。
+- **打开 Global Workspace 的 Agent 页面不再重复刷新多次**：Agent 本地 Skills 列表每个 Agent 只加载一次，且上一个 Agent 残留的慢请求不会再覆盖当前页面的数据。
+- **CLI 加固**：设置 `--json` 时 `skills-manager-cli` 现在会返回 JSON 错误信封（包括参数解析错误），拒绝克隆到非空且非 git 的目录，设置 5 秒的 SQLite busy timeout 以避免与桌面应用同时使用时立即失败，并在 Windows 上正确处理 `PATH`。
+
 ## [1.18.0] - 2026-05-09
 
 ### 变更

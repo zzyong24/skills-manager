@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.0] - 2026-05-13
+
+### Added
+- **Agent-local skills in Global Workspace** — Each agent's page now lists every skill in its global folder, including ones installed outside Skills Manager. Per agent you can upload a local-only skill into your central library, pull library updates down to a local copy, or remove a managed one — with search and tag filtering on the list.
+
+### Changed
+- **Install skills straight from the card** — Every skill card now shows an agent icon badge for each enabled agent (replacing the old two-letter labels). Click a badge to install or remove that skill for that agent right from the card; the badge shows live sync state with a spinner while the change is applied.
+- **Customizable agent order** — Settings lets you drag to reorder agents within each group (mainstream / more / custom), and that order is used everywhere agents appear — skill card badges, workspace lists, and toggles.
+- **Unified skill-card click** — Clicking anywhere on a skill card opens its detail panel in the Library, Global Workspace, and Project Workspace; action buttons no longer also trigger the card click.
+- **Help dialog** — Added a "Global Workspace" entry and refreshed the Library and Settings entries to cover the new agent icon badges and agent reordering.
+
+### Fixed
+- **OpenCode project skills path** — Project-level skills for OpenCode are now installed to `<project>/.opencode/skills/`, where OpenCode actually reads them, instead of `<project>/.config/opencode/skills/`.
+- **Opening an agent in Global Workspace no longer reloads the page several times** — the agent-local skills list is fetched once per agent, and a slow request left over from a previously selected agent can no longer overwrite the current one.
+- **CLI hardening** — `skills-manager-cli` now returns JSON error envelopes when `--json` is set (including argument-parse errors), refuses to clone into a non-empty non-git directory, sets a 5-second SQLite busy timeout so running it alongside the desktop app doesn't fail immediately, and handles `PATH` correctly on Windows.
+
 ## [1.18.0] - 2026-05-09
 
 ### Changed
